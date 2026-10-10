@@ -7,25 +7,16 @@
   <p>Slice, prepare, and process 3D models and geometry.</p>
 
   <!-- Live Demo / Web Link -->
-  <a href="https://whatmakeart.com">
+  <a href="https://whatmakeart.com/make-slice/">
     <img src="https://img.shields.io/badge/🚀_Live_Demo-Try_Online-2ea44f?style=for-the-badge" alt="Live Demo">
   </a>
   <br/><br/>
 
   <!-- Status & Package Badges -->
-  <a href="https://www.npmjs.com/package/make-slice">
-    <img src="https://img.shields.io/npm/v/make-slice?style=for-the-badge&logo=npm" alt="npm version">
-  </a>
-  <a href="https://www.npmjs.com/package/make-slice">
-    <img src="https://img.shields.io/npm/dm/make-slice?style=for-the-badge&logo=npm" alt="npm downloads">
-  </a>
-  <a href="https://github.com/whatmakeart/make-slice/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/whatmakeart/make-slice/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white" alt="CI Status">
-  </a>
-  <a href="https://github.com/whatmakeart/make-slice/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/whatmakeart/make-slice?style=for-the-badge" alt="License">
-  </a>
-</div>
+
+# make-slice
+
+[![License](https://img.shields.io/github/license/whatmakeart/make-slice?style=flat-square)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Vite](https://img.shields.io/badge/Vite-8-646CFF.svg?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/) [![Node](https://img.shields.io/badge/Node-%3E%3D22.15-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 
 ---
 

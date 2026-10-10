@@ -2,6 +2,31 @@
 
 **MakeSlice** is a free, browser-based digital fabrication tool that turns 3D models (STL and OBJ) into physical slot-together, stacked, or folded sheet assemblies for laser cutters and CNC routers. All processing runs 100% locally in your browser-no file uploads, servers, or installations required.
 
+<div align="center">
+  <h1>make-slice</h1>
+  <p>Slice, prepare, and process 3D models and geometry.</p>
+
+  <!-- Live Demo / Web Link -->
+  <a href="https://whatmakeart.com">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-Try_Online-2ea44f?style=for-the-badge" alt="Live Demo">
+  </a>
+  <br/><br/>
+
+  <!-- Status & Package Badges -->
+  <a href="https://www.npmjs.com/package/make-slice">
+    <img src="https://img.shields.io/npm/v/make-slice?style=for-the-badge&logo=npm" alt="npm version">
+  </a>
+  <a href="https://www.npmjs.com/package/make-slice">
+    <img src="https://img.shields.io/npm/dm/make-slice?style=for-the-badge&logo=npm" alt="npm downloads">
+  </a>
+  <a href="https://github.com/whatmakeart/make-slice/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/whatmakeart/make-slice/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white" alt="CI Status">
+  </a>
+  <a href="https://github.com/whatmakeart/make-slice/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/whatmakeart/make-slice?style=for-the-badge" alt="License">
+  </a>
+</div>
+
 ---
 
 ## Quick Start Guide

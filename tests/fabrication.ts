@@ -50,7 +50,8 @@ const scraps=sliceMesh(makePreset("cube"),{...base,partThickness:{"X-01":"T2"},s
 assert.ok(scraps.sheets.some(s=>s.source==="scrap"&&s.width===250));assert.ok(scraps.sheets.some(s=>s.source==="stock"));
 for(const sheet of scraps.sheets){assert.equal(new Set(sheet.placements.map(pl=>scraps.pieces.find(p=>p.id===pl.pieceId)!.assignedThicknessId)).size,1);assert.ok(exportSVG(scraps,sheet).includes(`width="${sheet.width}mm"`));}
 const master=masterLayout(scraps);assert.ok(master.width>600);assert.ok(exportMasterSVG(scraps).includes("ETCH_LABELS"));
-assert.equal(master.paths.filter(p=>p.pieceId?.startsWith("Sheet-")).length,scraps.sheets.length);
+assert.equal(master.paths.filter(p=>p.pieceId?.startsWith("Sheet-")).length,0);
+assert.equal(masterLayout(scraps,true,true).paths.filter(p=>p.layer==="REFERENCE_GUIDES").length,scraps.sheets.length);
 const variable=sliceMesh(makePreset("cube"),{...base,mode:"stacked",alignmentPins:false,partThickness:{"Z-01":"T3","Z-02":"T2"}});
 const layers=variable.pieces.filter(p=>p.category==="stacked_layer");near(layers[0].worldPosition,3);near(layers[1].worldPosition,8.5);
 for(let i=1;i<layers.length;i++)near(layers[i-1].worldPosition+layers[i-1].thickness!/2,layers[i].worldPosition-layers[i].thickness!/2);

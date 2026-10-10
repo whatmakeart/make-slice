@@ -1,8 +1,5 @@
-import { createSlicerSession } from "./session";
-import type { WorkerRequest } from "./types";
-const process = createSlicerSession((id,progress)=>self.postMessage({id,progress}));
-self.onmessage=(event:MessageEvent<WorkerRequest>)=>{
-  const response = process(event.data);
-  self.postMessage(response, "result" in response ? {transfer:[response.result.vertices.buffer]} : undefined);
-};
+import { createJobQueue } from "./job-queue";
+import type { WorkerMessage } from "./types";
+const queue=createJobQueue(r=>self.postMessage(r));
+self.onmessage=(event:MessageEvent<WorkerMessage>)=>queue.post(event.data);
 self.postMessage({type:"ready"});

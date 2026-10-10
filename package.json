@@ -1,6 +1,6 @@
 {
   "name": "makeslice-standalone",
-  "version": "2.4.0",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,7 @@
     "build": "node scripts/build-portable.mjs",
     "preview": "vite preview --config vite.portable.config.ts",
     "check": "tsc --noEmit",
-    "test": "node --import tsx tests/geometry.ts && node --import tsx tests/preview-geometry.ts && node --import tsx tests/material-pins.ts && node --import tsx tests/fabrication.ts && node --import tsx tests/shell-materials.ts && node --import tsx tests/nesting-guide.ts && node --import tsx tests/contour-bands.ts && node --import tsx tests/preferences.ts && node --import tsx tests/workspace.tsx && node tests/portable.mjs",
+    "test": "node --import tsx tests/calibration.ts && node --import tsx tests/geometry.ts && node --import tsx tests/cut-audit.ts && node --import tsx tests/preview-geometry.ts && node --import tsx tests/material-pins.ts && node --import tsx tests/fabrication.ts && node --import tsx tests/shell-materials.ts && node --import tsx tests/nesting-guide.ts && node --import tsx tests/contour-bands.ts && node --import tsx tests/preferences.ts && node --import tsx tests/plan.ts && node --import tsx tests/workspace.tsx && node tests/portable.mjs",
     "test:performance": "node --import tsx tests/performance.ts",
     "test:browser": "node tests/native-browser.cjs",
     "test:enhancements": "node tests/native-enhancements.cjs",

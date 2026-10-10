@@ -26,6 +26,14 @@ const atHeight=(paths:typeof x.cutPaths,z:number)=>scanIntervals(paths.map(l=>({
 const nominal=atHeight(x.assemblyPaths,70),compensated=atHeight(x.cutPaths,70);
 assert.equal(nominal.length,5);assert.equal(compensated.length,5);
 for(let i=0;i<4;i++){near(nominal[i+1][0]-nominal[i][1],4.05);near(compensated[i+1][0]-compensated[i][1],3.9);}
+const squareEntry=sliceMesh(cube,{...settings,leadInChamfer:0});
+assert.deepEqual(squareEntry.joints,r.joints);
+for(const [axis,mouth,inside] of [["X",99.5,70],["Y",.5,30]] as const){
+  const square=squareEntry.pieces.find(p=>p.axis===axis)!,beveled=r.pieces.find(p=>p.axis===axis)!;
+  const squareMouth=atHeight(square.assemblyPaths,mouth),beveledMouth=atHeight(beveled.assemblyPaths,mouth);
+  for(let i=0;i<4;i++){near(squareMouth[i+1][0]-squareMouth[i][1],4.05);near(beveledMouth[i+1][0]-beveledMouth[i][1],5.45);}
+  assert.deepEqual(atHeight(square.assemblyPaths,inside),atHeight(beveled.assemblyPaths,inside));
+}
 near(bounds(x.cutPaths).width,100.15);near(bounds(x.cutPaths).height,100.15);
 const split=sliceMesh(cube,{...settings,slotDepthRatio:.3,leadInChamfer:0});
 assert.ok(split.joints.every(j=>Math.abs(j.z-70)<.001));
@@ -42,7 +50,7 @@ function verifySheets(result:SliceResult){
   }
 }
 verifySheets(r);
-const ripple=sliceMesh(makePreset("ripple"),DEFAULT_SETTINGS);verifySheets(ripple);assert.equal(ripple.issues.length,0);
+const ripple=sliceMesh(makePreset("ripple"),DEFAULT_SETTINGS);verifySheets(ripple);assert.equal(ripple.issues.filter(i=>i.severity==="error").length,0);assert.ok(ripple.audit?.checkedPaths);
 const torus=makePreset("torus"),ring=section(torus.vertices,"Z",0.1);assert.equal(ring.open,0);
 const centerRing=section(torus.vertices,"Z",0); // Exact equatorial plane is a vertex/edge degeneracy test.
 assert.equal(centerRing.open,0);assert.equal(centerRing.branches,0);assert.equal(centerRing.loops.filter(p=>p.isHole).length,1);

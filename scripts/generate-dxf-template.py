@@ -24,8 +24,9 @@ for version in ("R2000", "R12"):
         doc.modelspace().dxf.extmax = (width, height, 0)
         doc.modelspace().dxf.limmax = (width, height)
     doc.set_modelspace_vport(view_height, (width / 2, height / 2))
-    for name, color in (("CUT_OUTLINE", 1), ("ETCH_LABELS", 5), ("CUT_INTERIOR", 3)):
-        doc.layers.new(name, dxfattribs={"color": color, **({"lineweight": 18 if name == "ETCH_LABELS" else 0} if version == "R2000" else {})})
+    for name, color in (("CUT_OUTLINE", 1), ("ETCH_LABELS", 5), ("CUT_INTERIOR", 3), ("REFERENCE_GUIDES", 8)):
+        layer=doc.layers.new(name, dxfattribs={"color": color, **({"lineweight": 18 if name in ("ETCH_LABELS","REFERENCE_GUIDES") else 0} if version == "R2000" else {})})
+        if name=="REFERENCE_GUIDES": layer.off()
     stream = io.StringIO()
     doc.write(stream)
     lines = stream.getvalue().splitlines()

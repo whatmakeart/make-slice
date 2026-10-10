@@ -48,7 +48,7 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
                 window.setTimeout(() => {if(!this.closed) this.onmessage?.({data});}, 0);
               },
             };
-            try {runInNewContext(code, {self:this.scope, performance, TextDecoder, TextEncoder, structuredClone, atob, btoa, console}, {timeout:10000});}
+            try {runInNewContext(code, {self:this.scope, performance, TextDecoder, TextEncoder, structuredClone, atob, btoa, console, setTimeout, clearTimeout}, {timeout:10000});}
             catch(error) {errors.push(error); this.onerror?.({message:error.message, preventDefault(){}});}
           });
         }
@@ -67,16 +67,20 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
     while (Date.now() < deadline) {if(check()) return; await new Promise(resolve => setTimeout(resolve, 20));}
     throw new Error(`${scenario}: ${document.querySelector(".error-banner")?.textContent || "Timed out"}; ${errors.map(e=>e.message).join("; ")}; ${document.body.textContent.slice(0,180)}`);
   }
-  await waitFor(() => {const current=tools.get("read_slice_project")?.execute({});return current?.model==="Jimmy.stl"&&!current?.pending;});
+  await waitFor(() => {const current=tools.get("read_slice_project")?.execute({});return current?.model==="Jimmy.stl"&&!current?.pending&&document.querySelectorAll(".sheet-part").length>0;});
   assert.equal(document.querySelector(".error-banner"), null);
   assert.ok(document.querySelectorAll(".sheet-part").length > 0);
   if(scenario === "inline-worker") assert.equal(workers.length, 1);
   assert.equal(document.querySelector('.app-footer a[href*="github.com"]')?.href,"https://github.com/whatmakeart/make-slice");
   document.querySelectorAll(".parameter-group summary")[2].click();
-  document.querySelector(".calibration-button").click();
+  [...document.querySelectorAll("button")].find(b=>b.textContent.includes("Calibrate stock")).click();
+  await waitFor(()=>[...document.querySelectorAll("button")].some(b=>b.textContent.includes("Download RAW measurement kit")));
+  [...document.querySelectorAll("button")].find(b=>b.textContent.includes("Download RAW measurement kit")).click();
   const calibration=unzipSync(new Uint8Array(await downloads.at(-1).blob.arrayBuffer()));
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(calibration["calibration-settings.json"])).finishedSlotsMm,Array.from({length:11},(_,i)=>(35+i)/10));
+  const metadata=JSON.parse(new TextDecoder().decode(calibration["calibration-metadata.json"]));
+  assert.equal(metadata.effectiveCuts,20);assert.equal(metadata.compensationApplied,false);assert.ok(calibration["Instructions.pdf"]);
   assert.match(new TextDecoder().decode(calibration[Object.keys(calibration).find(f=>f.endsWith(".svg"))]),/stroke-width="0.1763889"/);
+  [...document.querySelectorAll("button")].find(b=>b.textContent==="Close").click();
   assert.equal(tools.get("read_slice_project").execute({}).pending,false);
   const mesh = readFileSync(".sites-runtime/validation/cube-binary.stl");
   const input = document.querySelector('input[type="file"]');
@@ -97,7 +101,7 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
   const bundle = unzipSync(new Uint8Array(await downloads.at(-1).blob.arrayBuffer()));
   assert.ok(bundle["offline-cube_sheet_01.dxf"] && bundle["offline-cube_sheet_01.svg"] && bundle["offline-cube_assembly.csv"] && bundle["offline-cube_Assembly_Guide.pdf"]);
   [...document.querySelectorAll("button")].find(button=>button.textContent==="Close").click();
-  const bedWidth=[...document.querySelectorAll(".parameters label")].find(label=>label.firstElementChild?.textContent==="Width")?.querySelector("input");
+  const bedWidth=[...document.querySelectorAll(".parameters label")].find(label=>label.firstElementChild?.textContent==="Width")?.closest(".number-field")?.querySelector("input");
   assert.ok(bedWidth);
   const setValue=Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,"value").set;
   setValue.call(bedWidth,"40");bedWidth.dispatchEvent(new dom.window.Event("input",{bubbles:true}));bedWidth.dispatchEvent(new dom.window.Event("change",{bubbles:true}));bedWidth.dispatchEvent(new dom.window.FocusEvent("focusout",{bubbles:true}));

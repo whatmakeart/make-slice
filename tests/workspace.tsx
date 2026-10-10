@@ -25,7 +25,7 @@ const originalError=console.error;console.error=(...args)=>{if(String(args[0]).i
 class LocalWorker{
   mesh:MeshData|null=null;onmessage:((e:{data:unknown})=>void)|null=null;onerror:(()=>void)|null=null;closed=false;
   constructor(){setTimeout(()=>{if(!this.closed)this.onmessage?.({data:{type:"ready"}});},0);}
-  postMessage(req:WorkerRequest){setTimeout(()=>{if(this.closed)return;try{const m=req.type==="preset"?makePreset(req.preset):req.type==="load"?(/\.obj$/i.test(req.name)?parseOBJ(new TextDecoder().decode(req.buffer),req.name):parseSTL(req.buffer,req.name)):this.mesh;if(!m)throw new Error("No mesh");const result=sliceMesh(m,req.settings);this.mesh=m;this.onmessage?.({data:{id:req.id,result}});}catch(e){this.onmessage?.({data:{id:req.id,error:e instanceof Error?e.message:String(e)}});}},5);}
+  postMessage(req:WorkerRequest){if((req as {type:string}).type==="cancel")return;setTimeout(()=>{if(this.closed)return;try{const m=req.type==="preset"?makePreset(req.preset):req.type==="load"?(/\.obj$/i.test(req.name)?parseOBJ(new TextDecoder().decode(req.buffer),req.name):parseSTL(req.buffer,req.name)):this.mesh;if(!m)throw new Error("No mesh");const result=sliceMesh(m,req.settings);this.mesh=m;this.onmessage?.({data:{id:req.id,result}});}catch(e){this.onmessage?.({data:{id:req.id,error:e instanceof Error?e.message:String(e)}});}},5);}
   terminate(){this.closed=true;}
 }
 Object.defineProperty(globalThis,"Worker",{value:LocalWorker,configurable:true});
@@ -50,6 +50,55 @@ await user.click(screen.getByText("Advanced / production",{exact:true}));
 await user.click(screen.getByRole("button",{name:"Open parts inspector"}));
 const read=()=>registered.get("read_slice_project")!.execute({}) as {model:string;partCount:number;sheetCount:number;settings:Record<string,unknown>;pending:boolean;error:string};
 assert.equal(read().model,"Jimmy.stl");assert.ok(read().partCount>0);assert.equal(read().settings.sheetWidth,900);assert.equal(read().settings.sheetHeight,600);
+assert.equal(document.querySelector(".model-section .workflow-checklist"),null);
+assert.equal(screen.queryByText(/Detected source bounds:/),null);
+assert.equal(screen.queryByText("Organic sculptural test model"),null);
+assert.equal(screen.queryByRole("button",{name:"Cut preview"}),null);
+const initialSettings=JSON.stringify(read().settings);
+// Long manufacturing notes stay out of the rail. Hover/focus and touch help
+// explain choices without changing parameters or overwriting active tab states.
+assert.equal(screen.queryByText("T1 is the default stock for new parts."),null);
+assert.equal(screen.queryByText(/Measured thickness, full cut width, and joint clearance are separate/),null);
+const hoverHelp=async(target:HTMLElement,description:RegExp)=>{
+  await user.hover(target);
+  await waitFor(()=>assert.match(document.querySelector('[role="tooltip"]')?.textContent||"",description));
+  // JSDOM has no hover-grace geometry; move explicitly outside the tooltip.
+  // A modal select disables body pointer events, so stay in its listbox surface.
+  fireEvent.pointerLeave(target,{clientX:0,clientY:0,pointerType:"mouse"});
+  fireEvent.pointerMove(document.querySelector('[role="listbox"]')||document.body,{clientX:1000,clientY:700,pointerType:"mouse"});
+  await waitFor(()=>assert.equal(!!document.querySelector('[role="tooltip"]'),false));
+};
+const defaultHelp=screen.getByRole("button",{name:"Help: Default stock"});
+await hoverHelp(defaultHelp,/T1 is the default stock for new parts/);
+await user.click(defaultHelp);assert.ok(screen.getByText(/T1 measured thickness .*full kerf/));fireEvent.keyDown(document,{key:"Escape"});
+await waitFor(()=>assert.equal(!!screen.queryByText(/T1 measured thickness .*full kerf/),false));
+for(const [name,description] of [["Interlocking",/Two perpendicular rib families/],["Stacked",/Solid cross-sections/],["Box",/hollow finger-jointed shell/]] as const){
+  const tab=screen.getByRole("tab",{name});await hoverHelp(tab,description);
+  assert.equal(tab.getAttribute("data-state"),name==="Interlocking"?"active":"inactive");
+}
+await user.click(screen.getAllByText("Rotation, directional kerf & web checks",{exact:true})[0]);
+await user.click(screen.getByRole("combobox",{name:"T1 stock rotation rule"}));
+for(const [name,description] of [["Free · all trial angles",/every trial angle/],["90° · orthogonal only",/Quarter turns/],["180° · preserve grain / flute",/180° turn/],["Fixed · no rotation",/tested grain/]] as const){
+  const option=screen.getByRole("option",{name});await hoverHelp(option,description);
+  assert.equal(option.getAttribute("data-state"),name.startsWith("Free")?"checked":"unchecked");
+}
+fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("button",{name:"Help: T1 use directional beam"}));
+assert.ok(screen.getByText(/X = width of a vertical cut/));assert.ok(screen.getByText(/Directional beam axes stay fixed/));
+fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("button",{name:"Help: T1 minimum material web"}));assert.ok(screen.getByText(/opposing cut boundaries/));fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("button",{name:"Help: Entry chamfer"}));assert.ok(screen.getByText(/changes the part geometry/));fireEvent.keyDown(document,{key:"Escape"});
+assert.equal(JSON.stringify(read().settings),initialSettings);assert.equal(read().pending,false);
+for(const input of document.querySelectorAll<HTMLInputElement>(".dimension-fields input")){
+  assert.match(input.value,/^\d+(?:\.\d{1,2})?$/);
+  assert.equal(input.parentElement?.querySelectorAll(".number-steppers button").length,2);
+  fireEvent.blur(input);
+}
+assert.equal(JSON.stringify(read().settings),initialSettings);assert.equal(read().pending,false);
+await user.click(screen.getByRole("button",{name:"Help: Source mesh information"}));
+assert.ok(screen.getByText(/Detected source bounds:/));assert.ok(screen.getByText("Organic sculptural test model"));
+fireEvent.keyDown(document,{key:"Escape"});
+await waitFor(()=>assert.equal(screen.queryByText(/Detected source bounds:/),null));
 assert.equal(screen.queryByText("Planar fabrication"),null);
 assert.ok(document.querySelector<HTMLImageElement>(".creator-mark img")?.src.startsWith("data:image/png;base64,"));
 assert.equal(screen.getByRole("link",{name:/^GitHub source/}).getAttribute("href"),"https://github.com/whatmakeart/make-slice");
@@ -61,7 +110,7 @@ fireEvent.change(screen.getByLabelText("X ribs"),{target:{value:"4"}});
 assert.equal(read().pending,false);assert.equal(read().settings.xSliceCount,10);
 assert.equal((screen.getByRole("button",{name:"Export sheets"}) as HTMLButtonElement).disabled,false);
 fireEvent.blur(screen.getByLabelText("X ribs"));
-assert.equal((screen.getByRole("button",{name:"Export sheets"}) as HTMLButtonElement).disabled,true);
+assert.equal((screen.getByRole("button",{name:"Export sheets"}) as HTMLButtonElement).disabled,false);
 await waitFor(()=>{assert.equal(read().pending,false);assert.equal(read().settings.xSliceCount,4);assert.equal(read().partCount,12);},{timeout:10000});
 // Native editing stays local; Enter and blur commit once. Undo never hijacks input text.
 const xRibs=screen.getByLabelText("X ribs") as HTMLInputElement;
@@ -106,18 +155,48 @@ await act(async()=>{registered.get("export_cut_sheets")!.execute({format:"zip"})
 assert.ok(downloads[0].filename.endsWith("_laser-sheets.zip"));
 assert.deepEqual(Object.keys(JSON.parse(w.localStorage.getItem("makeslice_machine_defaults")!)).sort(),["laserKerf","materialThickness","sheetHeight","sheetWidth","slotFitTolerance"]);
 const zip=unzipSync(new Uint8Array(await downloads[0].blob.arrayBuffer()));assert.ok(zip["Ripple_form_assembly.csv"]&&zip["Ripple_form_sheet_01.dxf"]&&zip["Ripple_form_README.txt"]&&zip["Ripple_form_Assembly_Guide.pdf"]);
-// The fit test uses the active stock and never reslices or changes assembly settings.
+// Calibration kit uses the active measured stock and no reslice until Apply.
 const beforeCalibration=JSON.stringify(read().settings);
-fireEvent.change(screen.getByLabelText(/^Calibration center/),{target:{value:"6"}});fireEvent.blur(screen.getByLabelText(/^Calibration center/));
-assert.equal(read().pending,false);assert.equal(JSON.stringify(read().settings),beforeCalibration);
-await user.click(screen.getByRole("combobox",{name:"Active thickness slot"}));await user.click(screen.getByRole("option",{name:/^T2/}));
-await user.click(screen.getByRole("button",{name:"Download kerf test · DXF + SVG"}));
-const calibrationZip=unzipSync(new Uint8Array(await downloads.at(-1)!.blob.arrayBuffer()));
-const calibrationMetadata=JSON.parse(new TextDecoder().decode(calibrationZip["calibration-settings.json"]));
-assert.equal(calibrationMetadata.stockId,"T2");assert.deepEqual(calibrationMetadata.finishedSlotsMm,Array.from({length:11},(_,i)=>(55+i)/10));
+await user.click(document.querySelector('[data-stock-id="T2"] > summary') as HTMLElement);
+await waitFor(()=>assert.equal(document.querySelector('.material-slot[data-active="true"]')?.getAttribute("data-stock-id"),"T2"));
+assert.equal((document.querySelector('[data-stock-id="T2"]') as HTMLDetailsElement).open,true);
+assert.match(screen.getByRole("combobox",{name:"Active thickness slot"}).textContent||"",/^T2/);
+await user.click(screen.getByRole("switch",{name:"Assign thickness on click"}));
+await user.click(document.querySelector(".sheet-part") as HTMLElement);
+await waitFor(()=>{assert.equal(read().pending,false);assert.ok(Object.values(read().settings.partThickness as Record<string,string>).includes("T2"));},{timeout:10000});
+await user.click(screen.getByRole("switch",{name:"Assign thickness on click"}));
+await user.click(screen.getByRole("button",{name:"Undo parameter change"}));
+await waitFor(()=>{assert.equal(read().pending,false);assert.equal(JSON.stringify(read().settings),beforeCalibration);},{timeout:10000});
+await user.click(screen.getByRole("button",{name:"Calibrate stock · measurement & fit"}));
+assert.ok(screen.getByRole("heading",{name:"Calibrate T2 · cut width, then joint fit"}));
+assert.equal(screen.queryByText(/Native LightBurn files/),null);
+assert.equal(screen.queryByText("Reading an existing LightBurn gauge"),null);
+assert.equal(screen.queryByLabelText("LightBurn D digit"),null);
+assert.equal((screen.getByRole("button",{name:"Save stock profile"}) as HTMLButtonElement).disabled,false);
+fireEvent.change(screen.getByLabelText("Calibration profile name"),{target:{value:"Unmeasured test stock"}});
+await user.click(screen.getByRole("button",{name:"Save stock profile"}));
+assert.match(document.querySelector(".profile-feedback")?.textContent||"",/Saved “Unmeasured test stock”/);
+assert.ok(screen.getByRole("button",{name:"Apply profile Unmeasured test stock"}));
+assert.equal(JSON.parse(w.localStorage.getItem("makeslice_calibration_profiles_v1")!)[0].stock.calibration,undefined);
+await user.click(screen.getByRole("button",{name:"Save stock profile"}));
+assert.equal(JSON.parse(w.localStorage.getItem("makeslice_calibration_profiles_v1")!).length,1);
+const storageSetItem=w.Storage.prototype.setItem;
+Object.defineProperty(w.Storage.prototype,"setItem",{value:function(this:Storage,key:string,value:string){if(key==="makeslice_calibration_profiles_v1")throw new Error("Storage unavailable");storageSetItem.call(this,key,value);},configurable:true});
+try{await user.click(screen.getByRole("button",{name:"Save stock profile"}));assert.ok(screen.getByText("Profile was not saved: Storage unavailable"));}finally{Object.defineProperty(w.Storage.prototype,"setItem",{value:storageSetItem,configurable:true});}
+await user.click(screen.getByRole("button",{name:"Save stock profile"}));
+assert.equal(screen.queryByText("Profile was not saved: Storage unavailable"),null);
+await user.click(screen.getByRole("button",{name:"Download RAW measurement kit · SVG / DXF / PDF"}));
+const rawCalibration=unzipSync(new Uint8Array(await downloads.at(-1)!.blob.arrayBuffer()));
+const rawMetadata=JSON.parse(new TextDecoder().decode(rawCalibration["calibration-metadata.json"]));
+assert.equal(rawMetadata.effectiveCuts,20);assert.equal(rawMetadata.compensationApplied,false);assert.equal(rawMetadata.stock.id,"T2");assert.ok(rawCalibration["Instructions.pdf"]);assert.equal(rawMetadata.artboardBorderMm,20);assert.deepEqual(rawMetadata.artboards.map((b:{widthMm:number;heightMm:number})=>[b.widthMm,b.heightMm]),[[140,90],[90,140]]);
+await user.click(screen.getByRole("button",{name:"Download compensated joint fit kit"}));
+const fitCalibration=unzipSync(new Uint8Array(await downloads.at(-1)!.blob.arrayBuffer()));
+const fitMetadata=JSON.parse(new TextDecoder().decode(fitCalibration["calibration-metadata.json"]));
+assert.equal(fitMetadata.stock.id,"T2");assert.equal(fitMetadata.compensationApplied,true);
+assert.deepEqual(fitMetadata.finishedSlotsMm,Array.from({length:11},(_,i)=>Number((4.5+.05+(i-5)*.1).toFixed(6))));
 assert.equal(JSON.stringify(read().settings),beforeCalibration);
+await user.click(screen.getByRole("button",{name:"Close"}));
 await user.click(screen.getByRole("combobox",{name:"Active thickness slot"}));await user.click(screen.getByRole("option",{name:/^T1/}));
-fireEvent.change(screen.getByLabelText(/^Calibration center/),{target:{value:"4"}});fireEvent.blur(screen.getByLabelText(/^Calibration center/));
 await user.click(screen.getByRole("button",{name:"DXF"}));
 assert.ok(downloads.at(-1)!.filename.endsWith(".dxf"));assert.ok((await downloads.at(-1)!.blob.text()).includes("$INSUNITS"));
 await act(async()=>{await configure({sheetWidth:40,sheetHeight:40});});
@@ -132,7 +211,7 @@ await user.click(screen.getByRole("button",{name:"Export sheets"}));
 await screen.findByText("Export for CAD editing");
 assert.equal((screen.getByRole("button",{name:"Download all sheets · ZIP"}) as HTMLButtonElement).disabled,true);
 assert.equal((screen.getByRole("button",{name:"Download package · ZIP"}) as HTMLButtonElement).disabled,true);
-assert.equal((screen.getByRole("button",{name:"Kerf fit test · T1"}) as HTMLButtonElement).disabled,false);
+assert.equal((screen.getByRole("button",{name:"Joint fit & measurement · T1"}) as HTMLButtonElement).disabled,false);
 await user.click(screen.getByRole("switch",{name:"Legacy R12 DXF"}));
 await user.click(screen.getByRole("button",{name:"Download DXF"}));
 assert.ok((await downloads.at(-1)!.blob.text()).includes("AC1009"));
@@ -156,15 +235,24 @@ await act(async()=>{await configure({sheetWidth:600,sheetHeight:400});});
 const bad=new TextEncoder().encode("not an stl");
 fireEvent.change(screen.getByLabelText("Import STL or OBJ file"),{target:{files:[{name:"invalid.stl",size:bad.length,arrayBuffer:async()=>bad.buffer}]}});
 await waitFor(()=>assert.match(read().error,/not a readable/),{timeout:10000});
-assert.equal(read().model,"Ripple form");assert.equal((screen.getByRole("button",{name:"Export sheets"}) as HTMLButtonElement).disabled,true);
+assert.equal(read().model,"Ripple form");assert.equal((screen.getByRole("button",{name:"Export sheets"}) as HTMLButtonElement).disabled,false);
 assert.equal((screen.getByRole("button",{name:"DXF"}) as HTMLButtonElement).disabled,true);
 assert.throws(()=>registered.get("export_cut_sheets")!.execute({format:"dxf"}));
 const data=readFileSync(".sites-runtime/validation/cube-binary.stl"),buffer=data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength);
 fireEvent.change(screen.getByLabelText("Import STL or OBJ file"),{target:{files:[{name:"test-cube.stl",size:data.length,arrayBuffer:async()=>buffer}]}});
 await waitFor(()=>{assert.equal(read().model,"test-cube.stl");assert.equal(read().pending,false);assert.equal(read().error,"");},{timeout:10000});
 assert.equal(read().partCount,8);
+await user.click(screen.getByRole("button",{name:"Reset build settings"}));
+await waitFor(()=>{assert.equal(read().pending,false);assert.equal(read().model,"test-cube.stl");},{timeout:10000});
+assert.equal(read().settings.mode,"interlocking");
+await act(async()=>{await configure({targetWidth:100,xSliceCount:4,ySliceCount:4,materialThickness:4});});
 await act(async()=>{await configure({mode:"finger_box"});});
 assert.ok(screen.getByRole("combobox",{name:"Shell construction"}));assert.ok(screen.getByRole("combobox",{name:"Box extrusion direction"}));
+assert.equal(screen.queryByText(/Flat facets simplify up to 15 mm/),null);
+assert.equal(screen.queryByText(/Through-holes retain inner tunnel walls/),null);
+await user.click(screen.getByRole("button",{name:"Help: Curve deviation"}));
+assert.ok(screen.getByText(/Flat facets simplify up to 15 mm/));assert.ok(screen.getByText(/Through-holes retain inner tunnel walls/));
+fireEvent.keyDown(document,{key:"Escape"});
 await user.click(screen.getByRole("combobox",{name:"T1 material"}));await user.click(screen.getByRole("option",{name:"Baltic Birch Plywood"}));
 await waitFor(()=>{assert.equal(read().pending,false);assert.equal((read().settings.materialPresets as {id:string;family:string}[]).find(m=>m.id==="T1")?.family,"plywood");},{timeout:10000});
 await act(async()=>{await configure({fingerBox:{curveHandling:"living_hinge"}});});
@@ -198,6 +286,41 @@ await user.click(screen.getByRole("switch",{name:"Legacy R12 DXF"}));
 await user.click(screen.getByRole("button",{name:"Download all sheets · ZIP"}));
 const legacyZip=unzipSync(new Uint8Array(await downloads.at(-1)!.blob.arrayBuffer()));const text=new TextDecoder().decode(legacyZip["test-cube_sheet_01.dxf"]);assert.ok(text.includes("AC1009")&&!text.includes("LWPOLYLINE"));
 assert.ok(new TextDecoder().decode(legacyZip["test-cube_assembly.csv"]).includes("P-01"));
+await user.click(screen.getByRole("button",{name:"Close"}));
+// Invalid drafts remain visible and explain the limits without committing/clamping.
+const invalidCount=screen.getByLabelText("Unperforated top layers") as HTMLInputElement;
+fireEvent.change(invalidCount,{target:{value:"401"}});fireEvent.blur(invalidCount);
+assert.equal(invalidCount.value,"401");assert.equal(invalidCount.getAttribute("aria-invalid"),"true");assert.equal(read().settings.skipTopLayersCount,0);assert.ok(document.getElementById(invalidCount.getAttribute("aria-describedby")!)?.textContent?.includes("Previous valid setting"));
+fireEvent.change(invalidCount,{target:{value:"0"}});fireEvent.blur(invalidCount);assert.equal(invalidCount.getAttribute("aria-invalid"),"false");
+const precise=screen.getByLabelText("T1 full laser kerf") as HTMLInputElement;
+fireEvent.change(precise,{target:{value:"0.123456789"}});fireEvent.blur(precise);
+await waitFor(()=>{assert.equal(read().pending,false);assert.equal(read().settings.laserKerf,.123456789);},{timeout:10000});
+fireEvent.blur(precise);assert.equal(read().settings.laserKerf,.123456789);assert.equal(read().pending,false);
+await act(async()=>{await configure({targetWidth:100.123456789});});
+const modelWidth=screen.getByLabelText("Width · X") as HTMLInputElement;
+assert.equal(modelWidth.value,"100.12");fireEvent.blur(modelWidth);
+assert.equal(read().settings.targetWidth,100.123456789);assert.equal(read().pending,false);
+const mmSnapshot=JSON.stringify(read().settings),units=screen.getByRole("combobox",{name:"Display units"});fireEvent.change(units,{target:{value:"in"}});assert.equal(JSON.stringify(read().settings),mmSnapshot);fireEvent.change(units,{target:{value:"mm"}});assert.equal(JSON.stringify(read().settings),mmSnapshot);assert.equal(read().pending,false);
+// Touch/focus help is a popover, and Escape restores focus to the trigger.
+const info=screen.getByRole("button",{name:"Help: Thickness, cut width and clearance"});await user.click(info);assert.ok(screen.getByText(/Measured thickness is the actual stock/));fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("button",{name:"Calibrate stock · measurement & fit"}));
+fireEvent.change(screen.getByLabelText("X coupon gap"),{target:{value:"2.3"}});fireEvent.blur(screen.getByLabelText("X coupon gap"));
+fireEvent.change(screen.getByLabelText("Y coupon gap"),{target:{value:"2.7"}});fireEvent.blur(screen.getByLabelText("Y coupon gap"));
+await user.click(screen.getByLabelText("Include 45° comparison coupon"));assert.equal((screen.getByRole("button",{name:"Apply larger full kerf"}) as HTMLButtonElement).disabled,true);assert.equal((screen.getByRole("button",{name:"Apply X / Y ellipse model"}) as HTMLButtonElement).disabled,true);await user.click(screen.getByLabelText("Include 45° comparison coupon"));
+await user.click(screen.getByRole("button",{name:"Apply X / Y ellipse model"}));
+await waitFor(()=>{assert.equal(read().pending,false);const t=(read().settings.materialPresets as {id:string;kerfX:number;kerfY:number}[]).find(t=>t.id==="T1")!;assert.ok(Math.abs(t.kerfX-.115)<1e-12);assert.ok(Math.abs(t.kerfY-.135)<1e-12);},{timeout:10000});
+await user.click(screen.getByRole("button",{name:"Apply tested 4.15 mm opening"}));
+await waitFor(()=>{assert.equal(read().pending,false);assert.ok(Math.abs(Number(read().settings.slotFitTolerance)-.15)<1e-12);},{timeout:10000});
+assert.ok(screen.getByRole("button",{name:"Apply profile Unmeasured test stock"}));
+fireEvent.change(screen.getByLabelText("Calibration profile name"),{target:{value:"Test stock on machine A"}});await user.click(screen.getByRole("button",{name:"Save stock profile"}));assert.ok(w.localStorage.getItem("makeslice_calibration_profiles_v1")?.includes("Test stock on machine A"));assert.match(document.querySelector(".profile-feedback")?.textContent||"",/Saved “Test stock on machine A”/);
+await user.click(screen.getByRole("button",{name:"Close"}));
+const savedParams=JSON.stringify(read().settings);await user.click(screen.getByRole("button",{name:/^Save project/}));
+const projectBlob=downloads.at(-1)!.blob,projectFiles=unzipSync(new Uint8Array(await projectBlob.arrayBuffer()));assert.ok(projectFiles["mesh.stl"]);assert.deepEqual(Array.from(projectFiles["mesh.stl"]),Array.from(data));
+const cleanUnload=new w.Event("beforeunload",{cancelable:true});window.dispatchEvent(cleanUnload);assert.equal(cleanUnload.defaultPrevented,false);
+await act(async()=>{await configure({sheetWidth:800});});assert.notEqual(JSON.stringify(read().settings),savedParams);
+fireEvent.change(screen.getByLabelText("Open MakeSlice project"),{target:{files:[{name:"saved.makeslice",size:projectBlob.size,arrayBuffer:()=>projectBlob.arrayBuffer()}]}});
+await waitFor(()=>{assert.equal(read().pending,false);assert.equal(JSON.stringify(read().settings),savedParams);assert.ok(document.querySelector(".global-job-status")?.textContent?.includes("Completed revision"));},{timeout:10000});
+assert.ok(document.querySelector('.global-job-status')?.textContent?.includes('Completed revision'));
 cleanup();assert.equal(registered.size,0);
 // Policy failures must still generate real parts, import an STL, and export.
 for(const failure of ["constructor", "startup"]){
@@ -256,4 +379,4 @@ await user.click(screen.getByRole("button",{name:"2D Sheets"}));assert.equal(doc
 cleanup();assert.equal(registered.size,0);
 const afterClose=new w.Event("beforeunload",{cancelable:true});window.dispatchEvent(afterClose);assert.equal(afterClose.defaultPrevented,false);
 dom.window.close();console.error=originalError;
-console.log("PASS: Jimmy default, draft/committed numeric controls, slider release, parameter history and shortcuts, storage on export/drawer close, splitter pointer/keyboard clamps, tab-close guard, workspace/import/export/WebMCP, and worker policy fallbacks.");
+console.log("PASS: option hover/focus help and touch popovers without parameter changes or selected-state loss; compact stock/curve notes; removed external gauge reader; Jimmy default, draft/committed numeric controls, slider release, parameter history and shortcuts, storage on export/drawer close, splitter pointer/keyboard clamps, tab-close guard, workspace/import/export/WebMCP, and worker policy fallbacks.");

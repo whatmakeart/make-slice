@@ -78,7 +78,11 @@ function strip(w:Wall,lo:number,hi:number,width:number):Path2DLoop{
 }
 function oddSegments(length:number,width:number){let n=Math.max(1,Math.round(length/width));if(n%2===0)n++;return n;}
 function connect(a:Draft,b:Draft){a.meta.joints||=[];b.meta.joints||=[];if(!a.meta.joints.includes(b.id))a.meta.joints.push(b.id);if(!b.meta.joints.includes(a.id))b.meta.joints.push(a.id);}
-function relief(cut:Path2DLoop, radius:number, style:string):Path2DLoop[]{
+export function fingerJointSpan(start:number,end:number,clearance:number){
+  const inset=Math.max(0,clearance)/2;
+  return {maleStart:start+inset,maleEnd:end-inset,slotStart:start+inset-clearance,slotEnd:end-inset+clearance};
+}
+export function fingerJointRelief(cut:Path2DLoop, radius:number, style:string):Path2DLoop[]{
   if(style==="sharp"||radius<=EPS)return [cut];
   if(style==="dogbone")return [cut,...cut.points.map(p=>circle(p,radius))];
   const rounded:Point2D[]=[];
@@ -180,12 +184,12 @@ export function buildProfileBox(footprint:Path2DLoop[],H:number,s:SliceSettings,
       const margin=Math.min(length/4,Math.max(m.thickness*1.5,3)),usable=length-2*margin;
       const segmentCount=oddSegments(usable,f.fingerWidth),width=usable/segmentCount;
       for(let i=0;i<segmentCount;i+=2){
-        const lo=margin+i*width+Math.max(0,f.jointTolerance)/2,hi=margin+(i+1)*width-Math.max(0,f.jointTolerance)/2;
+        const joint=fingerJointSpan(margin+i*width,margin+(i+1)*width,f.jointTolerance),lo=joint.maleStart,hi=joint.maleEnd;
         if(hi-lo<1)continue;
         d.raw.push(rectangle(lo,height-.002,hi-lo,(options.topTabDepth??topM.thickness)+.002),rectangle(lo,-(options.bottomTabDepth??bottomM.thickness),hi-lo,(options.bottomTabDepth??bottomM.thickness)+.002));
         for(const c of [bottom,top]){
-          const mask=strip(wall,Math.max(0,lo-f.jointTolerance),Math.min(length,hi+f.jointTolerance),m.thickness+f.jointTolerance);
-          c.cuts.push(...relief(mask,Math.max(.02,materialFor(s,c.id).laserKerf/2),f.cornerStyle));connect(d,c);
+          const mask=strip(wall,Math.max(0,joint.slotStart),Math.min(length,joint.slotEnd),m.thickness+f.jointTolerance);
+          c.cuts.push(...fingerJointRelief(mask,Math.max(.02,materialFor(s,c.id).laserKerf/2),f.cornerStyle));connect(d,c);
         }
       }
       const tabs=oddSegments(height,f.fingerWidth),tabH=height/tabs;
@@ -201,7 +205,7 @@ export function buildProfileBox(footprint:Path2DLoop[],H:number,s:SliceSettings,
           const male=start?j%2===1:j%2===0;
           const y=j*tabH+(male?Math.max(0,f.jointTolerance)/2:0),h=tabH-(male?Math.max(0,f.jointTolerance):0);
           if(male)d.raw.push(rectangle(start?-depth:length-.002,y,depth+.002,h));
-          else d.cuts.push(...relief(rectangle(start?-depth-EPS:length-depth,y,depth*2+EPS,h),m.laserKerf/2,f.cornerStyle));
+          else d.cuts.push(...fingerJointRelief(rectangle(start?-depth-EPS:length-depth,y,depth*2+EPS,h),m.laserKerf/2,f.cornerStyle));
         }
         d.meta.joints!.push(neighbor);
       };

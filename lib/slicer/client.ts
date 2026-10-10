@@ -1,5 +1,5 @@
 import SlicerWorker from "./worker?worker&inline";
-import { createSlicerSession } from "./session";
+import { createJobQueue } from "./job-queue";
 import type { WorkerRequest, WorkerResponse } from "./types";
 
 // Inline workers avoid asset-origin restrictions and build-time import.meta URLs.
@@ -8,11 +8,12 @@ import type { WorkerRequest, WorkerResponse } from "./types";
 export class SlicerClient {
   onmessage: ((event: { data: WorkerResponse }) => void) | null = null;
   onerror: ((event: { message: string }) => void) | null = null;
+  get compatibilityMode(){return this.session!==null;}
   private worker: Worker | null = null;
   private ready = false;
   private closed = false;
   private pending: WorkerRequest[] = [];
-  private session: ReturnType<typeof createSlicerSession> | null = null;
+  private session: ReturnType<typeof createJobQueue> | null = null;
   private startupTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
@@ -43,19 +44,21 @@ export class SlicerClient {
   postMessage(request: WorkerRequest) {
     if (this.closed) throw new Error("The slicing engine has closed.");
     if (this.session) {
-      // Yield before computation so the page can display its progress state.
-      setTimeout(() => {
-        if (!this.closed) this.onmessage?.({ data: this.session!(request) });
-      }, 0);
+      this.session.post(request);
     } else if (!this.ready) {
-      this.pending.push(request);
+      const source=this.pending.find(old=>old.type==="load"||old.type==="preset");
+      for(const old of this.pending)this.onmessage?.({data:{id:old.id,cancelled:true}});
+      this.pending=[request.type==="settings"&&source?{...source,id:request.id,settings:request.settings}:request];
     } else {
       this.worker!.postMessage(request, request.type === "load" ? [request.buffer] : []);
     }
   }
 
+  cancel(id:number){this.pending.length=0;this.session?.post({id,type:"cancel"});if(this.ready)this.worker?.postMessage({id,type:"cancel"});}
+
   terminate() {
     this.closed = true;
+    this.session?.close();
     this.clearStartupTimer();
     this.worker?.terminate();
     this.worker = null;
@@ -72,7 +75,7 @@ export class SlicerClient {
     this.clearStartupTimer();
     this.worker?.terminate();
     this.worker = null;
-    this.session = createSlicerSession((id,progress)=>this.onmessage?.({data:{id,progress}}));
+    this.session = createJobQueue(data=>this.onmessage?.({data}));
     for (const request of this.pending.splice(0)) this.postMessage(request);
   }
 }

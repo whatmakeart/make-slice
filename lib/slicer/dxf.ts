@@ -1,7 +1,7 @@
 import { DXF_TEMPLATES } from "./dxf-template";
 import type { Point2D } from "./types";
 
-export interface DXFPath {points:Point2D[];closed:boolean;layer:"CUT_OUTLINE"|"CUT_INTERIOR"|"ETCH_LABELS"}
+export interface DXFPath {points:Point2D[];closed:boolean;layer:"CUT_OUTLINE"|"CUT_INTERIOR"|"ETCH_LABELS"|"REFERENCE_GUIDES"}
 const num=(n:number)=>Number(n.toFixed(4)).toString();
 
 export function drawingDXF(paths:DXFPath[],width:number,height:number,legacy=false,lineSegments=false):string{
@@ -9,12 +9,12 @@ export function drawingDXF(paths:DXFPath[],width:number,height:number,legacy=fal
   let handle=4096;
   const next=()=> (handle++).toString(16).toUpperCase();
   const g=(code:number,value:string|number)=>{rows.push(String(code).padStart(3," "),typeof value==="number"?num(value):value);};
-  const colors={CUT_OUTLINE:1,ETCH_LABELS:5,CUT_INTERIOR:3};
+  const colors={CUT_OUTLINE:1,ETCH_LABELS:5,CUT_INTERIOR:3,REFERENCE_GUIDES:8};
   const entity=(type:string,layer:DXFPath["layer"],subclass:string)=>{
     g(0,type);g(5,next());
     if(!legacy){g(330,template.modelHandle);g(100,"AcDbEntity");}
     g(8,layer);g(62,colors[layer]);
-    if(!legacy)g(370,layer==="ETCH_LABELS"?18:0);
+    if(!legacy)g(370,layer==="ETCH_LABELS"||layer==="REFERENCE_GUIDES"?18:0);
     if(!legacy)g(100,subclass);
   };
   for(const path of paths){

@@ -1,0 +1,112 @@
+[
+  {
+    "model": "Jimmy interlocking",
+    "parts": 24,
+    "rotationStep": 90,
+    "timeMs": 166,
+    "sheets": 1,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 865.85,
+        "heightMm": 288.77,
+        "areaMm2": 250031.01
+      }
+    ]
+  },
+  {
+    "model": "Jimmy interlocking",
+    "parts": 24,
+    "rotationStep": 15,
+    "timeMs": 708,
+    "sheets": 1,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 874.75,
+        "heightMm": 241.75,
+        "areaMm2": 211474.08
+      }
+    ]
+  },
+  {
+    "model": "Jimmy stacked",
+    "parts": 48,
+    "rotationStep": 90,
+    "timeMs": 275,
+    "sheets": 1,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 874.73,
+        "heightMm": 471.54,
+        "areaMm2": 412472.54
+      }
+    ]
+  },
+  {
+    "model": "Jimmy stacked",
+    "parts": 48,
+    "rotationStep": 15,
+    "timeMs": 1515,
+    "sheets": 1,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 874.98,
+        "heightMm": 470.52,
+        "areaMm2": 411695.51
+      }
+    ]
+  },
+  {
+    "model": "Jimmy fine layers",
+    "parts": 121,
+    "rotationStep": 90,
+    "timeMs": 733,
+    "sheets": 3,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 874.16,
+        "heightMm": 574.21,
+        "areaMm2": 501948.67
+      },
+      {
+        "widthMm": 874.84,
+        "heightMm": 570.21,
+        "areaMm2": 498846.78
+      },
+      {
+        "widthMm": 631.95,
+        "heightMm": 59.71,
+        "areaMm2": 37733.36
+      }
+    ]
+  },
+  {
+    "model": "Jimmy fine layers",
+    "parts": 121,
+    "rotationStep": 15,
+    "timeMs": 4106,
+    "sheets": 3,
+    "unplaced": 0,
+    "footprints": [
+      {
+        "widthMm": 874.3,
+        "heightMm": 574.89,
+        "areaMm2": 502624.94
+      },
+      {
+        "widthMm": 874.84,
+        "heightMm": 574.26,
+        "areaMm2": 502387.35
+      },
+      {
+        "widthMm": 163.35,
+        "heightMm": 55.57,
+        "areaMm2": 9076.74
+      }
+    ]
+  }
+]

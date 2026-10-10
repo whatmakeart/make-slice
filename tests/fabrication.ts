@@ -71,7 +71,7 @@ const S=sliceMesh(makePreset("letter_s"),{...base,mode:"finger_box",targetWidth:
 assert.ok(!S.issues.some(i=>i.severity==="error"),JSON.stringify(S.issues));assert.ok(S.pieces.some(p=>p.bendPath&&p.cutStrokes!.length>10));
 for(const p of S.pieces.filter(p=>p.bendPath)){const g=pieceGeometry(p);assert.ok(g.groups.length>0,"Curved panels need draw groups for array materials");const pos=g.getAttribute("position");assert.ok(pos.count>0);for(let i=0;i<pos.array.length;i++)assert.ok(Number.isFinite(pos.array[i]));g.dispose();}
 const sReload=parseOBJ(exportAssemblyOBJ(S),"curved-assembly.obj");assert.equal(sReload.info.boundaryEdges,0);assert.equal(sReload.info.nonManifoldEdges,0);
-const dxf=exportDXF(shell,shell.sheets[0]),svg=exportSVG(shell,shell.sheets[0]);assert.match(svg,/stroke-width="0.001pt"/);assert.match(svg,/stroke-width="0.5pt"/);assert.match(svg,/#00FF00/);assert.ok(dxf.includes("CUT_INTERIOR"));
+const dxf=exportDXF(shell,shell.sheets[0]),svg=exportSVG(shell,shell.sheets[0]);assert.match(svg,/stroke-width="0.0003528"/);assert.match(svg,/stroke-width="0.1763889"/);assert.match(svg,/#00FF00/);assert.ok(dxf.includes("CUT_INTERIOR"));
 const paths=sheetToolpaths(shell,shell.sheets[0]);assert.ok(paths.some(p=>p.layer==="CUT_INTERIOR"));assert.equal(paths.at(-1)!.layer,"CUT_OUTLINE");
 for(const r of [shell,mixed,T])for(const sheet of r.sheets){
   const cuts=sheetToolpaths(r,sheet,false);assert.ok(cuts.every(p=>p.closed),"Perimeters and enclosed holes must stay joined and closed, including open slots");

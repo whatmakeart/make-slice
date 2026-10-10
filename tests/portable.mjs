@@ -71,6 +71,13 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
   assert.equal(document.querySelector(".error-banner"), null);
   assert.ok(document.querySelectorAll(".sheet-part").length > 0);
   if(scenario === "inline-worker") assert.equal(workers.length, 1);
+  assert.equal(document.querySelector('.app-footer a[href*="github.com"]')?.href,"https://github.com/whatmakeart/make-slice");
+  document.querySelectorAll(".parameter-group summary")[2].click();
+  document.querySelector(".calibration-button").click();
+  const calibration=unzipSync(new Uint8Array(await downloads.at(-1).blob.arrayBuffer()));
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(calibration["calibration-settings.json"])).finishedSlotsMm,Array.from({length:11},(_,i)=>(35+i)/10));
+  assert.match(new TextDecoder().decode(calibration[Object.keys(calibration).find(f=>f.endsWith(".svg"))]),/stroke-width="0.1763889"/);
+  assert.equal(tools.get("read_slice_project").execute({}).pending,false);
   const mesh = readFileSync(".sites-runtime/validation/cube-binary.stl");
   const input = document.querySelector('input[type="file"]');
   Object.defineProperty(input, "files", {value:[{name:"offline-cube.stl",size:mesh.length,arrayBuffer:async()=>mesh.buffer.slice(mesh.byteOffset,mesh.byteOffset+mesh.byteLength)}]});
@@ -86,7 +93,7 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
   const exportButton = [...document.querySelectorAll("button")].find(button => button.textContent.includes("Export sheets"));
   exportButton.click();
   await waitFor(() => [...document.querySelectorAll("button")].some(button => button.textContent.includes("Download all sheets")));
-  [...document.querySelectorAll("button")].find(button => button.textContent.includes("Download all sheets")).click();
+  [...document.querySelectorAll("button")].find(button => button.textContent.includes("Download package · ZIP")).click();
   const bundle = unzipSync(new Uint8Array(await downloads.at(-1).blob.arrayBuffer()));
   assert.ok(bundle["offline-cube_sheet_01.dxf"] && bundle["offline-cube_sheet_01.svg"] && bundle["offline-cube_assembly.csv"] && bundle["offline-cube_Assembly_Guide.pdf"]);
   [...document.querySelectorAll("button")].find(button=>button.textContent==="Close").click();
@@ -103,5 +110,5 @@ for (const scenario of ["inline-worker", "blocked-workers"]) {
   assert.equal(errors.length, 0, errors.map(e=>e.message).join("\n"));
   for (const worker of workers) worker.terminate();
   dom.window.close();
-  console.log(`PASS: standalone file:// page, ${scenario}, default assembly, STL import, SVG and laser ZIP export.`);
+  console.log(`PASS: standalone file:// page, ${scenario}, Jimmy, kerf-test ZIP, repository link, STL import, SVG and top-action laser ZIP export.`);
 }

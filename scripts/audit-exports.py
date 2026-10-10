@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import ezdxf
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = ROOT / ".sites-runtime/validation/sprint-32"
+FIXTURES = ROOT / ".sites-runtime/validation/sprint-33"
 records = []
 for path in sorted(FIXTURES.glob("*.dxf")):
     doc = ezdxf.readfile(path)
@@ -70,7 +70,7 @@ for path in sorted(FIXTURES.glob("*.svg")):
     assert [float(v) for v in root.attrib["viewBox"].split()] == [0, 0, w, h]
     assert not root.findall(".//s:text", ns), (path.name, "production labels depend on fonts")
     if "Kerf_Measurement" in path.name or "Joint_Fit_Test" in path.name:
-        # Parse emitted vector coordinates, independent of the coupon layout.
+        # Parse emitted vector coordinates, independent of the test-piece layout.
         import re
         artwork = []
         for vector in root.findall(".//s:path", ns):
@@ -94,6 +94,6 @@ for path in sorted(FIXTURES.glob("*.svg")):
         assert counts["REFERENCE_GUIDES"] == 0, path.name
     records.append({"file": path.name, "format": "SVG", "units": "mm", "viewBoxMm": [w, h], "fontFreeProductionLabels": True, "pathsByOperationLayer": counts})
 
-report = {"version": "3.2.0", "scope": "Independent parser, structural/scale and calibration-artboard border checks; not native CAM application import or physical cutting.", "passed": True, "files": records}
-(ROOT / "docs/export-audit-3.2.json").write_text(json.dumps(report, indent=2) + "\n")
+report = {"version": "3.3.0", "scope": "Independent parser, structural/scale and calibration-artboard border checks; not native CAM application import or physical cutting.", "passed": True, "files": records}
+(ROOT / "docs/export-audit-3.3.json").write_text(json.dumps(report, indent=2) + "\n")
 print(json.dumps({"passed": True, "files": len(records), "dxf": sum(r["format"] != "SVG" for r in records), "svg": sum(r["format"] == "SVG" for r in records)}, indent=2))

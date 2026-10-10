@@ -100,6 +100,31 @@ const meshes=torus.pieces.map(p=>{const m=new Mesh(pieceGeometry(p),new MeshBasi
 assert.equal(new Raycaster(new Vector3(torus.dimensions[0]/2,torus.dimensions[1]/2,-20),new Vector3(0,0,1),0,torus.dimensions[2]+40).intersectObjects(meshes,false).length,0,"Banded tunnels stay open");
 meshes.forEach(m=>{m.geometry.dispose();(m.material as MeshBasicMaterial).dispose();});manifoldObjects(torus);
 
+// Optional support ribs must fit both halves of shared joining plates without
+// perforating the flex lattice or blocking the model's through-tunnels.
+const supportedSettings:SliceSettings={...base,fingerBox:{...base.fingerBox!,bracing:{...base.fingerBox!.bracing,enabled:true,maxUnsupportedSpan:50}}};
+for(const preset of ["sphere","torus"] as const){
+  const supported=sliceMesh(makePreset(preset),supportedSettings);ready(supported);
+  const braces=supported.pieces.filter(p=>p.category==="brace");assert.ok(braces.length>0);
+  assert.ok(braces.every(p=>p.id.startsWith(`B${String(p.bandIndex!+1).padStart(2,"0")}-BR-`)));
+  assert.ok(braces.every(p=>p.assignedThicknessId==="T2"));
+  plateFit(supported);manifoldObjects(supported);
+  assert.equal(supported.pieces.filter(p=>p.bendPath).length,(preset==="sphere"?sphere:torus).pieces.filter(p=>p.bendPath).length);
+  assert.ok(!supported.issues.some(i=>i.code==="cut-intersection"||i.code==="band-plate-reinforcement"));
+  if(preset==="torus"){
+    const solids=supported.pieces.map(p=>{const m=new Mesh(pieceGeometry(p),new MeshBasicMaterial({side:DoubleSide}));m.position.copy(assembledPosition(p));m.updateMatrixWorld(true);return m;});
+    assert.equal(new Raycaster(new Vector3(supported.dimensions[0]/2,supported.dimensions[1]/2,-20),new Vector3(0,0,1),0,supported.dimensions[2]+40).intersectObjects(solids,false).length,0);
+    solids.forEach(m=>{m.geometry.dispose();(m.material as MeshBasicMaterial).dispose();});
+    const fixtureDir=".sites-runtime/validation/sprint-33";mkdirSync(fixtureDir,{recursive:true});
+    writeFileSync(`${fixtureDir}/supported-torus-sheet-01.svg`,exportSVG(supported,supported.sheets[0]));
+    writeFileSync(`${fixtureDir}/supported-torus-sheet-01.dxf`,exportDXF(supported,supported.sheets[0]));
+  }
+}
+const noNeededRibs=sliceMesh(makePreset("sphere"),{...supportedSettings,fingerBox:{...supportedSettings.fingerBox!,bracing:{...supportedSettings.fingerBox!.bracing,maxUnsupportedSpan:1000}}});
+assert.equal(noNeededRibs.pieces.filter(p=>p.category==="brace").length,0);
+const rotatedSupports=sliceMesh(makePreset("sphere"),{...supportedSettings,fingerBox:{...supportedSettings.fingerBox!,extrusionAxis:"X",bracing:{...supportedSettings.fingerBox!.bracing,mode:"transverse"}}});ready(rotatedSupports);manifoldObjects(rotatedSupports);
+assert.ok(rotatedSupports.pieces.some(p=>p.category==="brace"&&p.frameRotation&&p.framePosition));
+
 for(const axis of ["X","Y"] as const){
   const r=sliceMesh(makePreset("sphere"),{...base,fingerBox:{...base.fingerBox!,extrusionAxis:axis}});ready(r);
   assert.ok(r.pieces.every(p=>p.frameRotation));
@@ -139,4 +164,4 @@ assert.throws(()=>validateSettings({...base,fingerBox:{...base.fingerBox!,bandHe
 assert.throws(()=>validateSettings({...base,fingerBox:{...base.fingerBox!,bandDeviation:26}}),/profile deviation/);
 const acrylic=sliceMesh(makePreset("sphere"),{...base,materialPresets:[{id:"T1",name:"Cast acrylic",thickness:3.8,laserKerf:.15,colorHex:"#ffffff",family:"acrylic"}]});
 assert.ok(acrylic.issues.some(i=>i.code==="hinge-material-disabled"&&i.severity==="error"));
-console.log(`PASS: adaptive/uniform contour bands, mixed-stock opposing tabs and physical plate clearance, X/Y frames, clear tunnels, manifold OBJ solids, joined CAD contours, and numbered band assembly guides. Jimmy: ${jimmy.layerCount} bands / ${jimmy.pieces.length} parts.`);
+console.log(`PASS: adaptive/uniform contour bands, mixed-stock opposing tabs and physical plate clearance, optional internal ribs with protected hinges/tunnels and rotated frames, manifold OBJ solids, joined CAD contours, and numbered band assembly guides. Jimmy: ${jimmy.layerCount} bands / ${jimmy.pieces.length} parts.`);

@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { createCalibrationStrip } from "./calibration";
-import { bounds, booleanPaths, circle } from "./polygons";
+import { bounds, booleanPaths, circle, splitComponents } from "./polygons";
 import { compensate, rotatePoint } from "./beam";
 import { drawingDXF } from "./dxf";
 import { svgDrawing } from "./export";
@@ -21,8 +21,8 @@ const rectangle=(x:number,y:number,w:number,h:number,isHole=false):Path2DLoop=>(
 function label(paths:Toolpath[],text:string,x:number,y:number,id:string,size=2.5){const strokes=vectorLabel(text,[],{point:{x,y},clearance:1000});for(const s of strokes)paths.push({layer:"ETCH_LABELS",operation:"score",pieceId:id,points:s.points.map(p=>({x:x+(p.x-x)*size/3.8,y:y+(p.y-y)*size/3.8})),closed:!!s.closed});}
 export function kerfFromGap(gapMm:number){if(!Number.isFinite(gapMm)||gapMm<=0||gapMm>EFFECTIVE_CUTS*5)throw new Error("Measured gap must be greater than zero and at most 100 mm.");return {fullKerfMm:gapMm/EFFECTIVE_CUTS,oneSidedOffsetMm:gapMm/(2*EFFECTIVE_CUTS),effectiveCuts:EFFECTIVE_CUTS,gaugeVersion:GAUGE_VERSION};}
 export function lightBurnGaugeReading(D:number,E:number){if(!Number.isInteger(D)||D<0||D>9||!Number.isInteger(E)||E<0||E>9)throw new Error("Choose D and E digits from 0 to 9.");const decimalMm=D+E/10;return {decimalMm,oneSidedOffsetMm:decimalMm/40,fullKerfMm:decimalMm/20,gaugeVersion:"LIGHTBURN-20-KERF-GAUGE"};}
-export interface Coupon {id:string;paths:Toolpath[];width:number;height:number;orientation:number;compensated:boolean;nominal?:Path2DLoop[]}
-export function createKerfGauge(angle=0):Coupon{
+export interface CalibrationTestPiece {id:string;paths:Toolpath[];width:number;height:number;orientation:number;compensated:boolean;nominal?:Path2DLoop[];finishedSlotsMm?:number[];checkJoint?:string;etchText?:string[]}
+export function createKerfGauge(angle=0):CalibrationTestPiece{
   if(![0,90,45].includes(angle))throw new Error("Gauge orientation must be X, Y or 45 degrees.");
   // 19 bars span a single cavity. Its boundary widens by k, while each bar
   // loses k: assembled gap = (19 + 1) * k. Internal lines are shared ONCE.
@@ -36,15 +36,43 @@ export function createKerfGauge(angle=0):Coupon{
   return {id,paths:rotated.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX,y:q.y-b.minY}))})),width:b.width,height:b.height,orientation:angle,compensated:false};
 }
 export function syntheticGaugeGap(fullKerf:number,length=80){const cavityWidth=length+fullKerf,barWidth=length/GAUGE_BARS-fullKerf;return cavityWidth-GAUGE_BARS*barWidth;}
-export function createFitCoupons(stock:MaterialThicknessPreset,s:SliceSettings,step=.1,perpendicular=true):Coupon[]{
-  const clearance=s.mode==="finger_box"?boxSettings(s).jointTolerance:s.slotFitTolerance,strip=createCalibrationStrip(stock,stock.thickness+clearance,step);
-  return (perpendicular?[0,90]:[0]).map(angle=>{const nominal=strip.nominal.map(l=>({...l,points:l.points.map(q=>rotatePoint(q,angle))})),cut=compensate(nominal,stock.kerfX??stock.laserKerf,stock.kerfY??stock.laserKerf),b=bounds(cut),id=`JOINT-FIT-${angle===0?"X":"Y"}`;
-    const paths:Toolpath[]=cut.map(l=>({points:l.points,closed:true,layer:l.isHole?"CUT_INTERIOR":"CUT_OUTLINE",operation:l.isHole?"interior":"exterior",pieceId:id}));
-    paths.push(...strip.paths.filter(p=>p.layer==="ETCH_LABELS").map(p=>({...p,points:p.points.map(q=>rotatePoint(q,angle)),pieceId:id})));
-    return {id,paths:paths.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX,y:q.y-b.minY}))})),width:b.width,height:b.height,orientation:angle,compensated:true};
+/** Two handled pieces each carry one half of the actual construction joint.
+ * Stepped openings stay on a connected comb; the other piece's TEST edge is
+ * the mating thickness gauge. The optional second comb is cut at 90 degrees,
+ * then compensated in the machine's fixed X/Y beam axes. */
+export function createFitTestPieces(stock:MaterialThicknessPreset,s:SliceSettings,step=.1,perpendicular=true):CalibrationTestPiece[]{
+  const clearance=s.mode==="finger_box"?boxSettings(s).jointTolerance:s.slotFitTolerance;
+  const strip=createCalibrationStrip(stock,stock.thickness+clearance,step),checks=splitComponents(representativeJoint(stock,s).nominal!).sort((a,b)=>bounds(a).minX-bounds(b).minX);
+  if(checks.length!==2)throw new Error("The construction joint test must have two connected halves. Review stock and joint dimensions.");
+  const margin=(strip.width-strip.barWidth)/2,width=strip.barWidth;
+  const comb=strip.nominal.map(l=>({...l,points:l.points.map(p=>({x:p.x-margin,y:p.y-margin+(p.y>margin+.001?18:0)}))}));
+  const clean=(text:string)=>text.normalize("NFKD").replace(/[^a-zA-Z0-9 .+\-/]/g,"").trim();
+  return [0,1].map(index=>{
+    const angle=index&&perpendicular?90:0,id=`JOINT-FIT-${index?"B":"A"}`,check=checks[index],cb=bounds(check);
+    const materialPin=index===1&&s.mode==="stacked"&&s.alignmentPinType==="material";
+    const dx=materialPin?width/2-(cb.minX+cb.maxX)/2:2-cb.maxX,dy=materialPin?2-cb.maxY:2-cb.minY;
+    const body=index&&!perpendicular?[rectangle(0,0,width,58)]:comb;
+    const nominal=booleanPaths([...body,...check.map(l=>({...l,points:l.points.map(p=>({x:p.x+dx,y:p.y+dy}))})),rectangle(width-.002,9,18.002,12)],[],"union");
+    if(splitComponents(nominal).length!==1)throw new Error("The handled fit test disconnected. Review stock and joint dimensions.");
+    const paths:Toolpath[]=[],etchText=[`MAKESLICE FIT ${stock.id} ${index?"B":"A"} / ${angle?"Y":"X"}`,
+      clean(`${stock.family||"cardboard"} / ${stock.name.slice(0,28)}`),`THICK ${Number(stock.thickness.toFixed(3))} MM - STEP ${step} MM`,
+      `KERF X ${Number((stock.kerfX??stock.laserKerf).toFixed(4))} / Y ${Number((stock.kerfY??stock.laserKerf).toFixed(4))} MM`];
+    etchText.forEach((text,i)=>label(paths,text,width/2,8+i*7,id,2));
+    label(paths,index&&!perpendicular?"TEST EDGE INTO A - THEN CHECK JOINT":"FINISHED OPENINGS MM",width/2,35,id,2);
+    label(paths,"TEST",width+8,15,id,1.8);
+    const checkY=s.mode==="interlocking"&&index?28:s.mode==="finger_box"&&index?24:7;
+    label(paths,`CHECK ${index?"B":"A"}`,dx+(cb.minX+cb.maxX)/2,materialPin?4:dy+checkY,id,1.8);
+    if(!index||perpendicular)paths.push(...strip.paths.filter(p=>p.pieceId?.startsWith("SLOT-")).map(p=>({...p,pieceId:id,points:p.points.map(q=>({x:q.x-margin,y:q.y-margin+18}))})));
+    const rotated=nominal.map(l=>({...l,points:l.points.map(q=>rotatePoint(q,angle))}));
+    const cut=compensate(rotated,stock.kerfX??stock.laserKerf,stock.kerfY??stock.laserKerf);
+    if(splitComponents(cut).length!==1)throw new Error("Kerf disconnected a fit test piece. Reduce kerf or enlarge the joint features.");
+    const output:Toolpath[]=[...cut.map(l=>({points:l.points,closed:true,layer:l.isHole?"CUT_INTERIOR" as const:"CUT_OUTLINE" as const,operation:l.isHole?"interior" as const:"exterior" as const,pieceId:id})),...paths.map(p=>({...p,points:p.points.map(q=>rotatePoint(q,angle))}))];
+    const b=bounds([{isHole:false,points:output.flatMap(p=>p.points)}]),move=(q:Point2D)=>({x:q.x-b.minX,y:q.y-b.minY});
+    return {id,paths:output.map(p=>({...p,points:p.points.map(move)})),width:b.width,height:b.height,orientation:angle,compensated:true,
+      nominal:rotated.map(l=>({...l,points:l.points.map(move)})),finishedSlotsMm:!index||perpendicular?strip.slots.map(slot=>slot.width):[],checkJoint:s.mode,etchText};
   });
 }
-export function representativeJoint(stock:MaterialThicknessPreset,s:SliceSettings):Coupon{
+export function representativeJoint(stock:MaterialThicknessPreset,s:SliceSettings):CalibrationTestPiece{
   const fit=s.mode==="finger_box"?boxSettings(s).jointTolerance:s.slotFitTolerance,t=stock.thickness,id=`CHECK-${s.mode}`,w=s.mode==="finger_box"?boxSettings(s).fingerWidth:20;
   // Actual current-mode dimensions: edge half-lap notch, closed pin-sized slot,
   // or shell wall tab projecting by the mating cap thickness.
@@ -69,15 +97,21 @@ export function representativeJoint(stock:MaterialThicknessPreset,s:SliceSetting
   const cut=compensate([...left,...right],stock.kerfX??stock.laserKerf,stock.kerfY??stock.laserKerf),b=bounds(cut),paths:Toolpath[]=cut.map(l=>({points:l.points,closed:true,layer:l.isHole?"CUT_INTERIOR":"CUT_OUTLINE",operation:l.isHole?"interior":"exterior",pieceId:id}));
   label(paths,`CHECK ${stock.id}`,15,6,id,2);return {id,paths:paths.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX,y:q.y-b.minY}))})),width:b.width,height:b.height,orientation:0,compensated:true,nominal:[...left,...right]};
 }
-export function layoutCoupons(coupons:Coupon[]){
+export function layoutTestPieces(pieces:CalibrationTestPiece[],combine=false){
   // Each test gets its own artboard, including the etching extent. The machine
   // bed and production nesting margin do not change calibration drawing size.
-  return coupons.map(c=>{
+  if(combine){
+    let y=0;const paths:Toolpath[]=[];
+    for(const piece of pieces){paths.push(...piece.paths.map(p=>({...p,points:p.points.map(q=>({x:q.x,y:q.y+y}))})));y+=piece.height+10;}
+    const b=bounds([{isHole:false,points:paths.flatMap(p=>p.points)}]);
+    return [{width:b.width+2*CALIBRATION_BORDER_MM,height:b.height+2*CALIBRATION_BORDER_MM,pieceIds:pieces.map(p=>p.id),paths:paths.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX+CALIBRATION_BORDER_MM,y:q.y-b.minY+CALIBRATION_BORDER_MM}))}))}];
+  }
+  return pieces.map(c=>{
     const b=bounds([{isHole:false,points:c.paths.flatMap(p=>p.points)}]);
-    return {width:b.width+2*CALIBRATION_BORDER_MM,height:b.height+2*CALIBRATION_BORDER_MM,couponIds:[c.id],paths:c.paths.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX+CALIBRATION_BORDER_MM,y:q.y-b.minY+CALIBRATION_BORDER_MM}))}))};
+    return {width:b.width+2*CALIBRATION_BORDER_MM,height:b.height+2*CALIBRATION_BORDER_MM,pieceIds:[c.id],paths:c.paths.map(p=>({...p,points:p.points.map(q=>({x:q.x-b.minX+CALIBRATION_BORDER_MM,y:q.y-b.minY+CALIBRATION_BORDER_MM}))}))};
   });
 }
-function instructions(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:SliceSettings,slots:number[]){
+function instructions(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:SliceSettings,slots:number[],pieces:CalibrationTestPiece[]){
   const p=new VectorPage(612,792,`MakeSlice ${stage==="measure"?"cut-width measurement":"joint fit"} instructions`);
   p.rect(0,0,612,792,"#ffffff");p.image(BRAND_PRINT_IMAGE,36,20,24,24);p.text("WHAT MAKE ART / MakeSlice",70,38,12,true,"#317466");p.rect(36,54,25,25,"#317466");p.text(stage==="measure"?"1":"2",48.5,73,19,true,"#ffffff","center");p.text(stage==="measure"?"Measure laser cut width":"Choose joint fit",70,74,22,true);
   p.text(`${stock.id} · ${stock.name.slice(0,42)} · measured ${stock.thickness} mm`,36,99,10);p.text(`Date: ${new Date().toISOString().slice(0,10)}   Test artboards: artwork + 20 mm border per side`,36,116,10);
@@ -92,21 +126,21 @@ function instructions(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:Slic
     "The cavity gains one kerf; the 19 bars lose 19 kerfs. Total factor = 20.",
     "Do not measure against nominal 80 mm: that setup has a different factor.",
     "Repeat for X and Y; optionally compare 45°. Apply the reading to this stock.",
-    "Re-test the same coupon three times; record min/max and repeatability.",
+    "Re-measure the same test piece three times; record min/max and repeatability.",
     "These equations model ideal cuts. Validate actual stock and a joint sample.",
   ]:[
-    "First measure and apply the full kerf using the RAW measurement coupon.",
+    "First measure and apply the full kerf using the RAW measurement test.",
     "Fit files are already compensated by MakeSlice. Extra CAM offsets = ZERO.",
     "Import one SVG or DXF copy at 1:1 mm. Etch blue, then cut green/red.",
-    "Try a measured edge of the mating stock in each labeled opening.",
+    "Two handled pieces share one sheet. Both carry stock and kerf etching.",
+    "Stand the other piece upright; try its TEST edge in each labeled opening.",
     "Do not force the fit or crush cardboard flutes. Select the opening in the app.",
     "Joint clearance = selected finished opening minus measured stock thickness.",
     "For shell mode this updates box fit; for ribs/layers it updates joint clearance.",
-    "Cut the CHECK pair from this kit to validate the active construction joint.",
+    "The CHECK ends are joined to the handles: mate A with B to test this joint.",
     "For mixed stock, test both mating thicknesses and each cutting stock.",
     "Orientation, char, moisture and compressibility can change the actual fit.",
-    "A fine comb is useful only when repeated cuts support its smaller step.",
-    "This test does not qualify a living hinge's strength, fatigue or bend radius.",
+        "This test does not qualify a living hinge's strength, fatigue or bend radius.",
   ];lines.forEach((line,i)=>p.text(`${i+1}. ${line}`,36,150+i*21,9));
   if(stage==="measure"){
     const x=70,y=444,w=400,h=120;p.rect(x-20,y-20,w+40,h+40,"#f1f5f9","#374151");p.rect(x,y,w,h,"#ffffff","#374151");for(let i=0;i<19;i++)p.rect(x+i*19,y,19,h,"#d9be8b","#64748b");
@@ -114,7 +148,15 @@ function instructions(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:Slic
     p.text("Gauge ID: MS-CAVITY-19-V1 / 19 bars / N = 20",36,672,11,true);
     p.text("2.3 mm gap ÷ 20 = 0.115 mm full kerf; half = 0.0575 mm offset",36,695,10);
   }else{
-    p.text("FINISHED OPENING       CLEARANCE VS MEASURED STOCK",36,427,10,true);slots.forEach((v,i)=>p.text(`${v.toFixed(3)} mm                      ${(v-stock.thickness).toFixed(3)} mm`,36,449+i*17,10));
+    p.text("TWO HANDLED TEST PIECES",36,427,10,true);
+    const sheet=layoutTestPieces(pieces,true)[0],scale=Math.min(235/sheet.width,190/sheet.height),x=36,y=442;
+    for(const path of sheet.paths.filter(p=>p.layer!=="ETCH_LABELS"))p.path([path.points.map(q=>({x:x+q.x*scale,y:y+q.y*scale}))],path.closed,{stroke:path.layer==="CUT_INTERIOR"?"#64748b":"#317466",weight:.8});
+    for(const [i,piece] of pieces.entries()){
+      const b=bounds([{isHole:false,points:sheet.paths.filter(q=>q.pieceId===piece.id&&q.layer==="CUT_OUTLINE").flatMap(q=>q.points)}]);
+      p.text(i?"B":"A",x+(b.minX+b.maxX)/2*scale,y+(b.minY+b.maxY)/2*scale,10,true,"#317466","center");
+    }
+    p.text("Schematic - actual cut files carry etched labels",36,642,8);
+    p.text("OPENING / CLEARANCE",314,427,10,true);slots.forEach((v,i)=>p.text(`${v.toFixed(3)} mm / ${(v-stock.thickness).toFixed(3)} mm`,314,449+i*17,10));
     p.text(`Full kerf applied: ${stock.laserKerf} mm · directional ${stock.kerfX??stock.laserKerf} / ${stock.kerfY??stock.laserKerf} mm`,36,654,10);
     p.text("Choose the tested slot in MakeSlice to calculate clearance automatically.",36,677,10);
   }
@@ -124,11 +166,11 @@ function instructions(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:Slic
 export function exportCalibrationKit(stage:"measure"|"fit",stock:MaterialThicknessPreset,s:SliceSettings,options:{diagonal?:boolean;step?:number;perpendicular?:boolean}={}){
   validateSettings({...s,sheetWidth:900,sheetHeight:600,sheetMargin:0,partSpacing:0});const step=options.step??.1,clearance=s.mode==="finger_box"?boxSettings(s).jointTolerance:s.slotFitTolerance;
   const slots=Array.from({length:11},(_,i)=>Number((stock.thickness+clearance+(i-5)*step).toFixed(6)));
-  const coupons=stage==="measure"?[createKerfGauge(0),createKerfGauge(90),...(options.diagonal?[createKerfGauge(45)]:[])]:[...createFitCoupons(stock,s,step,options.perpendicular!==false),representativeJoint(stock,s)];
-  const sheets=layoutCoupons(coupons),files:Record<string,Uint8Array>={},base=`MakeSlice_${stage==="measure"?"RAW_Kerf_Measurement":"Joint_Fit_Test"}_${stock.id}`,print=instructions(stage,stock,s,slots);
+  const testPieces=stage==="measure"?[createKerfGauge(0),createKerfGauge(90),...(options.diagonal?[createKerfGauge(45)]:[])]:createFitTestPieces(stock,s,step,options.perpendicular!==false);
+  const sheets=layoutTestPieces(testPieces,stage==="fit"),files:Record<string,Uint8Array>={},base=`MakeSlice_${stage==="measure"?"RAW_Kerf_Measurement":"Joint_Fit_Test"}_${stock.id}`,print=instructions(stage,stock,s,slots,testPieces);
   sheets.forEach((sheet,i)=>{const name=`${base}_Sheet_${String(i+1).padStart(2,"0")}`;files[`${name}.svg`]=strToU8(svgDrawing(sheet.paths,sheet.width,sheet.height,name,stage==="measure"?`RAW UNCOMPENSATED; zero CAM offsets. Gauge ${GAUGE_VERSION}; 19 packed bars in matching cavity; factor 20. X is width across machine X from vertical lines.`:"Finished openings. MakeSlice already compensated; extra CAM offsets zero."));files[`${name}.dxf`]=strToU8(drawingDXF(sheet.paths,sheet.width,sheet.height));});
   files["Instructions.pdf"]=print.pdf;files["Instructions.svg"]=strToU8(print.svg);
-  files["calibration-metadata.json"]=strToU8(JSON.stringify({stage,gaugeVersion:stage==="measure"?GAUGE_VERSION:"MS-FIT-V2",effectiveCuts:stage==="measure"?EFFECTIVE_CUTS:undefined,barCount:stage==="measure"?GAUGE_BARS:undefined,measurementSetup:"19 bars packed against LEFT inner wall of matching cut cavity; gap at RIGHT wall",units:"mm",stock,date:new Date().toISOString(),fullKerfMm:stage==="measure"?0:stock.laserKerf,compensationApplied:stage==="fit",compensationOwner:stage==="fit"?"MakeSlice":"none",CAMOffsetMm:0,stepMm:step,finishedSlotsMm:stage==="fit"?slots:undefined,sheets:sheets.map(s=>s.couponIds),artboardBorderMm:CALIBRATION_BORDER_MM,artboards:sheets.map(s=>({couponIds:s.couponIds,widthMm:s.width,heightMm:s.height})),directionModel:stock.kerfX!==undefined?"ellipse in machine coordinates, mitered corners; empirical approximation":"isotropic"},null,2));
-  files["README.txt"]=strToU8(`MakeSlice ${stage} calibration kit\nRead Instructions.pdf. Laser drawings and paper instructions are separate. All additional CAM kerf offsets must be ZERO.\n${stage==="measure"?`${GAUGE_VERSION}: 19 bars, matching cavity, gap=(19+1)*fullKerf. Do not use a nominal-length reading.`:"Labeled sizes are desired finished openings. Use an actual material edge, then test the active-mode CHECK joint pair."}\nSVG and DXF test artboards include a 20 mm blank border on each side of the artwork. Import at original size; the border is not a cutting path.\n`);
-  return {filename:`${base}.zip`,data:zipSync(files,{level:6}),sheets,slots,coupons};
+  files["calibration-metadata.json"]=strToU8(JSON.stringify({stage,gaugeVersion:stage==="measure"?GAUGE_VERSION:"MS-FIT-HANDLED-V3",effectiveCuts:stage==="measure"?EFFECTIVE_CUTS:undefined,barCount:stage==="measure"?GAUGE_BARS:undefined,measurementSetup:"19 bars packed against LEFT inner wall of matching cut cavity; gap at RIGHT wall",units:"mm",stock,date:new Date().toISOString(),testPieces:testPieces.map(p=>({id:p.id,orientation:p.orientation,checkJoint:p.checkJoint,finishedSlotsMm:p.finishedSlotsMm,etchText:p.etchText})),fullKerfMm:stage==="measure"?0:stock.laserKerf,compensationApplied:stage==="fit",compensationOwner:stage==="fit"?"MakeSlice":"none",CAMOffsetMm:0,stepMm:step,finishedSlotsMm:stage==="fit"?slots:undefined,sheets:sheets.map(s=>s.pieceIds),artboardBorderMm:CALIBRATION_BORDER_MM,artboards:sheets.map(s=>({pieceIds:s.pieceIds,widthMm:s.width,heightMm:s.height})),directionModel:stock.kerfX!==undefined?"ellipse in machine coordinates, mitered corners; empirical approximation":"isotropic"},null,2));
+  files["README.txt"]=strToU8(`MakeSlice ${stage} calibration kit\nRead Instructions.pdf. Laser drawings and paper instructions are separate. All additional CAM kerf offsets must be ZERO.\n${stage==="measure"?`${GAUGE_VERSION}: 19 bars, matching cavity, gap=(19+1)*fullKerf. Do not use a nominal-length reading.`:"Labeled sizes are desired finished openings. Two connected test pieces on one sheet. Use the other piece's TEST edge, then mate their integrated CHECK ends for the active construction joint."}\nSVG and DXF test artboards include a 20 mm blank border on each side of the artwork. Import at original size; the border is not a cutting path.\n`);
+  return {filename:`${base}.zip`,data:zipSync(files,{level:6}),sheets,slots,testPieces};
 }

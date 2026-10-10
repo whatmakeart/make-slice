@@ -61,7 +61,7 @@
 
 @media(max-width:1050px){.parameters .two-fields{grid-template-columns:1fr}.number-input{height:40px}.number-steppers{flex-direction:row;width:80px}.number-steppers button{width:40px;font-size:16px}.number-steppers button+button{border-top:0;border-left:1px solid var(--border)}.calibration-dialog .two-fields{grid-template-columns:1fr}}
 
-.construction-preview{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--muted)}.construction-preview svg{width:100px;min-width:100px;color:var(--accent-foreground)}.construction-preview strong{font-size:12px;font-weight:600}.construction-preview p{font-size:12px;line-height:1.5;color:#bdcdd3;margin-top:4px}.compatibility-note{font-size:11px;color:#f0c782}
+.construction-preview{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--muted)}.construction-preview svg{width:76px;height:76px;min-width:76px;flex-shrink:0;color:var(--accent-foreground)}.construction-preview figcaption{min-width:0}.construction-preview strong{font-size:12px;font-weight:600}.construction-preview p{font-size:12px;line-height:1.5;color:#bdcdd3;margin-top:4px}.compatibility-note{font-size:11px;color:#f0c782}
 
 /* Compact, accessible option explanations. */
 .field-label-row{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0;font-size:12px;line-height:1.5;color:#bdcdd3}
@@ -83,3 +83,22 @@
 
 .two-fields>.number-field>.field-label-row{flex:1;align-items:flex-start}
 .number-input{flex-shrink:0}
+
+/* Settings rail resizing keeps all controls usable without changing fabrication parameters. */
+.sidebar-splitter{width:8px;flex:0 0 8px;cursor:col-resize;touch-action:none;user-select:none;position:relative;background:var(--background);z-index:36;transition:background .15s}
+.sidebar-splitter:before{content:"";position:absolute;left:3px;top:calc(50% - 22px);width:2px;height:44px;border-radius:2px;background:var(--border)}
+.sidebar-splitter:hover,.sidebar-splitter.dragging,.sidebar-splitter:focus-visible{background:var(--border)}
+.sidebar-splitter:hover:before,.sidebar-splitter.dragging:before,.sidebar-splitter:focus-visible:before{background:var(--ring)}
+.sidebar-splitter[hidden]{display:none!important}
+@media(max-width:1050px){.sidebar-splitter{display:none!important}}
+
+.calibration-field{display:flex;flex-direction:column;gap:5px;min-width:0;margin-bottom:8px}
+.calibration-field .field-label-row{min-height:28px}
+.calibration-option{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
+.calibration-option .check-option{margin:0;min-width:0}
+.calibration-dialog .export-options-card>h3{display:flex;align-items:center;gap:6px}
+.calibration-results>div>span{display:flex;align-items:center;gap:5px}
+.calibration-results .info-help{width:22px;height:22px;min-width:22px}
+.calibration-dialog [data-slot=dialog-title]:focus{outline:none}
+.box-support-controls{border-top:1px solid var(--border);margin-top:4px;padding-top:4px}
+.brace-settings{display:flex;flex-direction:column;gap:10px}

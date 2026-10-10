@@ -45,7 +45,7 @@ function assemblySteps(r:SliceResult):AssemblyStep[]{
   if(r.settings.mode==="finger_box"){
     if(r.pieces.some(p=>p.shellMethod==="contour_bands")){
       add("Position the first contour plate","Match all PLATE-01 islands to the ghost/reference shape. Numbered bands build upward along the stack axis.",choose(p=>p.plateRole==="bottom"));
-      for(let band=0;band<r.layerCount;band++)add(`Build contour band ${item(band)}`,"Pre-bend the numbered strips, seat lower tabs, and glue butt seams. Close with the next plate. Shared tabs engage opposite halves of a through-slot; secure them with adhesive. Keep tunnels clear.",choose(p=>p.bandIndex===band&&p.category!=="box_cap"||p.bandIndex===band+1&&p.category==="box_cap"));
+      for(let band=0;band<r.layerCount;band++)add(`Build contour band ${item(band)}`,"Pre-bend strips and seat lower tabs. Fit any numbered internal ribs before closing with the next plate. Shared tabs engage opposite halves of a through-slot; glue seams and secure these joints. Keep tunnels clear.",choose(p=>p.bandIndex===band&&p.category!=="box_cap"||p.bandIndex===band+1&&p.category==="box_cap"));
     }else if(r.pieces.some(p=>p.shellMethod==="mesh_panels")){
       const outer=choose(p=>p.wallRole!=="hole"),split=Math.ceil(outer.length/2);
       add("Start the body panels","Match PANEL IDs and adjacent edges. Dry-fit square seams; bevel or glue angled seams.",outer.slice(0,split));

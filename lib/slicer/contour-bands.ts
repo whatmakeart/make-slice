@@ -1,5 +1,5 @@
 import { Quaternion, Vector3 } from "three";
-import type { Issue, LaserCutPiece, Path2DLoop, Point2D, SliceSettings } from "./types";
+import type { Issue, LaserCutPiece, Path2DLoop, Point2D, SliceSettings, Stroke } from "./types";
 import { booleanPaths, bounds, EPS, materialArea, offsetPaths, pointClearance, splitComponents } from "./polygons";
 import { materialFor, materials, boxSettings } from "./materials";
 import { meshBounds } from "./stl";
@@ -11,10 +11,12 @@ export interface ProfileBoxOptions {
   prefix?:string; bottomId?:string; topId?:string;
   bottomProfile?:Path2DLoop[]; topProfile?:Path2DLoop[];
   bottomTabDepth?:number; topTabDepth?:number; continuous?:boolean;
+  onCapGuides?:(id:string,guides:Stroke[])=>void;
+  onBraceAnchor?:(capId:string,braceId:string,point:Point2D)=>void;
 }
 type ProfileBuilder=(profile:Path2DLoop[],height:number,s:SliceSettings,report:BandReport,options:ProfileBoxOptions)=>LaserCutPiece[];
 interface Band {lo:number;hi:number;profile:Path2DLoop[];deviation:number}
-interface Plate {id:string;profile:Path2DLoop[];cuts:Path2DLoop[];joints:Set<string>;z:number;index:number}
+interface Plate {id:string;profile:Path2DLoop[];cuts:Path2DLoop[];guides:Stroke[];braceAnchors:Map<string,Point2D[]>;joints:Set<string>;z:number;index:number}
 
 // Bidirectional boundary distance detects curvature as well as taper. Samples
 // along edges keep triangulated section density from dominating the estimate.
@@ -71,22 +73,25 @@ export function buildContourBands(input:Float64Array,s:SliceSettings,report:Band
   const plates:Plate[]=Array.from({length:bands.length+1},(_,index)=>{
     const profile=index===0?bands[0].profile:index===bands.length?bands.at(-1)!.profile:booleanPaths(bands[index-1].profile,bands[index].profile,"union");
     const id=plateId(index),t=materialFor(s,id).thickness,z=index===0?t/2:index===bands.length?H-t/2:bands[index].lo;
-    return {id,profile,cuts:[],joints:new Set<string>(),z,index};
+    return {id,profile,cuts:[],guides:[],braceAnchors:new Map<string,Point2D[]>(),joints:new Set<string>(),z,index};
   });
   const wallsByBand:LaserCutPiece[][]=[];
   for(let index=0;index<bands.length;index++){
     const band=bands[index],lower=plates[index],upper=plates[index+1],tb=materialFor(s,lower.id).thickness,tt=materialFor(s,upper.id).thickness;
     const offset=lower.z-tb/2,height=upper.z-lower.z+(tb+tt)/2;
-    const local={...s,fingerBox:{...f,curveHandling:"living_hinge" as const,chordalError:Math.min(f.chordalError,.3),bracing:{...f.bracing,enabled:false}}};
+    const local={...s,fingerBox:{...f,curveHandling:"living_hinge" as const,chordalError:Math.min(f.chordalError,.3)}};
     const prefix=`B${String(index+1).padStart(2,"0")}-`;
     const parts=buildProfile(band.profile,height,local,report,{prefix,bottomId:lower.id,topId:upper.id,bottomProfile:lower.profile,topProfile:upper.profile,
-      bottomTabDepth:index===0?tb:Math.max(.1,tb/2-.03),topTabDepth:index===bands.length-1?tt:Math.max(.1,tt/2-.03),continuous:true});
+      bottomTabDepth:index===0?tb:Math.max(.1,tb/2-.03),topTabDepth:index===bands.length-1?tt:Math.max(.1,tt/2-.03),continuous:true,
+      onCapGuides:(id,guides)=>{(id===lower.id?lower:upper).guides.push(...guides);},
+      onBraceAnchor:(id,braceId,point)=>{const plate=id===lower.id?lower:upper;plate.braceAnchors.set(braceId,[...plate.braceAnchors.get(braceId)||[],point]);}});
     const walls:LaserCutPiece[]=[];
     for(const part of parts){
       if(part.category==="box_cap"){
         const plate=part.id===lower.id?lower:upper;plate.cuts.push(...part.interiorRegions||[]);part.joints.forEach(id=>plate.joints.add(id));continue;
       }
-      if(part.bendPath)part.bendZ=(part.bendZ||0)+offset;
+      if(part.category==="brace")part.framePosition=[0,0,offset];
+      else if(part.bendPath)part.bendZ=(part.bendZ||0)+offset;
       else if(part.worldTransform)part.worldTransform.position[2]+=offset;
       else part.worldPosition+=offset;
       part.shellMethod="contour_bands";part.bandIndex=index;part.bandRange=[band.lo,band.hi];
@@ -109,7 +114,7 @@ export function buildContourBands(input:Float64Array,s:SliceSettings,report:Band
     const pieces=components.map((component,i)=>{
       const id=components.length===1?plate.id:`${plate.id}-${String.fromCharCode(65+i)}`;
       const part=buildPiece(s,id,component,[],{parentId:plate.id,axis:"Z",worldPosition:plate.z,category:"box_cap",sliceIndex:plate.index,shellMethod:"contour_bands",bandIndex:plate.index,
-        explodeDirection:[0,0,(plate.index-bands.length/2)/Math.max(1,bands.length/2)],assignedThicknessId:materialFor(s,plate.id).id,plateRole:plate.index===0?"bottom":plate.index===bands.length?"top":"joining"});
+        explodeDirection:[0,0,(plate.index-bands.length/2)/Math.max(1,bands.length/2)],assignedThicknessId:materialFor(s,plate.id).id,plateRole:plate.index===0?"bottom":plate.index===bands.length?"top":"joining"},plate.guides.filter(g=>g.points.every(q=>pointClearance(q,component)>-.01)));
       part.interiorRegions=plate.cuts;part.joints=[...plate.joints];return part;
     });
     platesByBoundary.push(pieces);
@@ -119,18 +124,18 @@ export function buildContourBands(input:Float64Array,s:SliceSettings,report:Band
   for(let i=0;i<wallsByBand.length;i++)for(const wall of wallsByBand[i]){
     const baseJoints=wall.joints.filter(id=>!id.startsWith("PLATE-")&&id!==wall.id),anchor=wall.bendPath||[];
     for(const boundary of [i,i+1]){
-      const candidates=platesByBoundary[boundary].filter(p=>anchor.some(q=>Math.abs(pointClearance(q,p.assemblyPaths))<Math.max(wall.thickness||maxT,2)*2));
+      const anchors=wall.category==="brace"?plates[boundary].braceAnchors.get(wall.id)||[]:anchor;
+      const candidates=platesByBoundary[boundary].filter(p=>anchors.some(q=>Math.abs(pointClearance(q,p.assemblyPaths))<Math.max(wall.thickness||maxT,2)*2));
       for(const plate of candidates){baseJoints.push(plate.id);plate.joints=plate.joints.filter(id=>id!==wall.id).concat(wall.id);}
     }
     wall.joints=[...new Set(baseJoints)];
   }
   for(const plate of platesByBoundary.flat())plate.joints=plate.joints.filter(id=>wallsByBand.flat().some(w=>w.id===id&&w.joints.includes(plate.id)));
   for(let i=0;i<bands.length;i++){final.push(...platesByBoundary[i],...wallsByBand[i]);}final.push(...platesByBoundary.at(-1)!);
-  if(f.bracing.enabled)report("band-plate-reinforcement","warning","Contour joining plates support each band. Grid braces are available for constant-profile and surface-panel shells, and are not added to contour bands.");
   const missed=bands.filter(b=>b.deviation>limit||!Number.isFinite(b.deviation));
   if(missed.length)report("band-deviation-limit","warning",`${missed.length} bands reach the minimum usable height before meeting the profile deviation target. Thin stock, smaller bands, or another stack axis can follow these features more closely.`);
   report("contour-band-assembly","warning",`${bands.length} hollow contour bands approximate the changing surface as stacked steps. Pre-bend strips, glue their butt seams, and build upward by B/PLATE number. Intermediate tabs enter opposite halves of one joining plate; adhesive secures these shared through-slots. Compare against the ghost mesh before cutting.`);
   const origin=new Vector3(...mesh.min).applyQuaternion(rotation);
-  if(axis.z<.99999||origin.lengthSq()>1e-10)for(const p of final){p.frameRotation=rotation.toArray();p.framePosition=origin.toArray();if(p.explodeDirection)p.explodeDirection=new Vector3(...p.explodeDirection).applyQuaternion(rotation).toArray();}
+  if(axis.z<.99999||origin.lengthSq()>1e-10)for(const p of final){p.frameRotation=rotation.toArray();p.framePosition=new Vector3(...p.framePosition||[0,0,0]).applyQuaternion(rotation).add(origin).toArray();if(p.explodeDirection)p.explodeDirection=new Vector3(...p.explodeDirection).applyQuaternion(rotation).toArray();}
   return final;
 }

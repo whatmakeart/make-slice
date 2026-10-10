@@ -55,6 +55,20 @@ assert.equal(screen.queryByText(/Detected source bounds:/),null);
 assert.equal(screen.queryByText("Organic sculptural test model"),null);
 assert.equal(screen.queryByRole("button",{name:"Cut preview"}),null);
 const initialSettings=JSON.stringify(read().settings);
+// Settings-rail resizing affects layout only, with a locked usable minimum.
+const rail=screen.getByRole("separator",{name:"Resize build settings sidebar"});
+fireEvent.keyDown(rail,{key:"ArrowRight"});assert.equal(rail.getAttribute("aria-valuenow"),"336");
+assert.equal(document.querySelector<HTMLElement>(".workspace-layout")?.style.getPropertyValue("--rail-width"),"336px");
+fireEvent.pointerDown(rail,{pointerId:7,button:0,clientX:336});fireEvent.pointerMove(rail,{pointerId:7,clientX:-500});fireEvent.pointerUp(rail,{pointerId:7,clientX:-500});
+assert.equal(rail.getAttribute("aria-valuenow"),"320");assert.equal(JSON.stringify(read().settings),initialSettings);
+fireEvent.keyDown(rail,{key:"End"});assert.equal(rail.getAttribute("aria-valuenow"),"560");fireEvent.doubleClick(rail);assert.equal(rail.getAttribute("aria-valuenow"),"320");
+// Upload is available from the source selector; canceling leaves the model intact.
+const meshInput=screen.getByLabelText("Import STL or OBJ file");let uploadClicks=0;
+const picked=()=>{uploadClicks++;};meshInput.addEventListener("click",picked);
+await user.click(screen.getByRole("combobox",{name:"Source mesh"}));await user.click(screen.getByRole("option",{name:"Upload mesh…"}));
+meshInput.removeEventListener("click",picked);assert.equal(uploadClicks,1);assert.equal(read().model,"Jimmy.stl");assert.equal(read().pending,false);
+assert.match(screen.getByRole("combobox",{name:"Source mesh"}).textContent||"",/Jimmy/);
+
 // Long manufacturing notes stay out of the rail. Hover/focus and touch help
 // explain choices without changing parameters or overwriting active tab states.
 assert.equal(screen.queryByText("T1 is the default stock for new parts."),null);
@@ -103,7 +117,7 @@ assert.equal(screen.queryByText("Planar fabrication"),null);
 assert.ok(document.querySelector<HTMLImageElement>(".creator-mark img")?.src.startsWith("data:image/png;base64,"));
 assert.equal(screen.getByRole("link",{name:/^GitHub source/}).getAttribute("href"),"https://github.com/whatmakeart/make-slice");
 assert.equal((screen.getByRole("button",{name:"Undo parameter change"}) as HTMLButtonElement).disabled,true);
-await user.click(screen.getByRole("combobox",{name:"Sample model"}));await user.click(screen.getByRole("option",{name:"Ripple form"}));
+await user.click(screen.getByRole("combobox",{name:"Source mesh"}));await user.click(screen.getByRole("option",{name:"Ripple form"}));
 await waitFor(()=>{assert.equal(read().pending,false);assert.equal(read().model,"Ripple form");},{timeout:10000});
 assert.equal(read().partCount,18);
 fireEvent.change(screen.getByLabelText("X ribs"),{target:{value:"4"}});
@@ -169,6 +183,18 @@ await user.click(screen.getByRole("button",{name:"Undo parameter change"}));
 await waitFor(()=>{assert.equal(read().pending,false);assert.equal(JSON.stringify(read().settings),beforeCalibration);},{timeout:10000});
 await user.click(screen.getByRole("button",{name:"Calibrate stock · measurement & fit"}));
 assert.ok(screen.getByRole("heading",{name:"Calibrate T2 · cut width, then joint fit"}));
+assert.equal(document.activeElement,screen.getByRole("heading",{name:"Calibrate T2 · cut width, then joint fit"}));
+await new Promise(resolve=>setTimeout(resolve,350));
+assert.equal(!!document.querySelector('[role="tooltip"]'),false,"Opening calibration must not show help automatically");
+assert.equal(!!document.querySelector('.info-popover'),false);
+await hoverHelp(screen.getByRole("button",{name:"Help: Why 20 effective cut widths?"}),/nineteen/);
+await user.click(screen.getByRole("button",{name:"Help: X test gap"}));assert.ok(screen.getByText(/Vertical cuts measure the beam width/));fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("combobox",{name:"Fit test step"}));
+for(const [name,description] of [["0.1 mm · coarse",/1 mm overall/],["0.05 mm · finer",/0.5 mm overall/],["0.02 mm · repeatable cuts only",/0.2 mm overall/]] as const)await hoverHelp(screen.getByRole("option",{name}),description);
+fireEvent.keyDown(document,{key:"Escape"});
+await user.click(screen.getByRole("button",{name:"Help: Perpendicular fit slots"}));assert.ok(screen.getByText(/exactly two pieces on one sheet/));fireEvent.keyDown(document,{key:"Escape"});
+assert.equal(screen.queryByText(/coupon/i),null);
+
 assert.equal(screen.queryByText(/Native LightBurn files/),null);
 assert.equal(screen.queryByText("Reading an existing LightBurn gauge"),null);
 assert.equal(screen.queryByLabelText("LightBurn D digit"),null);
@@ -192,7 +218,7 @@ assert.equal(rawMetadata.effectiveCuts,20);assert.equal(rawMetadata.compensation
 await user.click(screen.getByRole("button",{name:"Download compensated joint fit kit"}));
 const fitCalibration=unzipSync(new Uint8Array(await downloads.at(-1)!.blob.arrayBuffer()));
 const fitMetadata=JSON.parse(new TextDecoder().decode(fitCalibration["calibration-metadata.json"]));
-assert.equal(fitMetadata.stock.id,"T2");assert.equal(fitMetadata.compensationApplied,true);
+assert.equal(fitMetadata.stock.id,"T2");assert.equal(fitMetadata.compensationApplied,true);assert.equal(fitMetadata.artboards.length,1);assert.equal(fitMetadata.testPieces.length,2);
 assert.deepEqual(fitMetadata.finishedSlotsMm,Array.from({length:11},(_,i)=>Number((4.5+.05+(i-5)*.1).toFixed(6))));
 assert.equal(JSON.stringify(read().settings),beforeCalibration);
 await user.click(screen.getByRole("button",{name:"Close"}));
@@ -248,6 +274,7 @@ assert.equal(read().settings.mode,"interlocking");
 await act(async()=>{await configure({targetWidth:100,xSliceCount:4,ySliceCount:4,materialThickness:4});});
 await act(async()=>{await configure({mode:"finger_box"});});
 assert.ok(screen.getByRole("combobox",{name:"Shell construction"}));assert.ok(screen.getByRole("combobox",{name:"Box extrusion direction"}));
+assert.ok(screen.getByRole("switch",{name:"Interior supports"}).closest('.parameter-group')?.textContent?.includes("Slicing structure"));
 assert.equal(screen.queryByText(/Flat facets simplify up to 15 mm/),null);
 assert.equal(screen.queryByText(/Through-holes retain inner tunnel walls/),null);
 await user.click(screen.getByRole("button",{name:"Help: Curve deviation"}));
@@ -304,9 +331,9 @@ const mmSnapshot=JSON.stringify(read().settings),units=screen.getByRole("combobo
 // Touch/focus help is a popover, and Escape restores focus to the trigger.
 const info=screen.getByRole("button",{name:"Help: Thickness, cut width and clearance"});await user.click(info);assert.ok(screen.getByText(/Measured thickness is the actual stock/));fireEvent.keyDown(document,{key:"Escape"});
 await user.click(screen.getByRole("button",{name:"Calibrate stock · measurement & fit"}));
-fireEvent.change(screen.getByLabelText("X coupon gap"),{target:{value:"2.3"}});fireEvent.blur(screen.getByLabelText("X coupon gap"));
-fireEvent.change(screen.getByLabelText("Y coupon gap"),{target:{value:"2.7"}});fireEvent.blur(screen.getByLabelText("Y coupon gap"));
-await user.click(screen.getByLabelText("Include 45° comparison coupon"));assert.equal((screen.getByRole("button",{name:"Apply larger full kerf"}) as HTMLButtonElement).disabled,true);assert.equal((screen.getByRole("button",{name:"Apply X / Y ellipse model"}) as HTMLButtonElement).disabled,true);await user.click(screen.getByLabelText("Include 45° comparison coupon"));
+fireEvent.change(screen.getByLabelText("X test gap"),{target:{value:"2.3"}});fireEvent.blur(screen.getByLabelText("X test gap"));
+fireEvent.change(screen.getByLabelText("Y test gap"),{target:{value:"2.7"}});fireEvent.blur(screen.getByLabelText("Y test gap"));
+await user.click(screen.getByLabelText("Include 45° comparison test"));assert.equal((screen.getByRole("button",{name:"Apply larger full kerf"}) as HTMLButtonElement).disabled,true);assert.equal((screen.getByRole("button",{name:"Apply X / Y ellipse model"}) as HTMLButtonElement).disabled,true);await user.click(screen.getByLabelText("Include 45° comparison test"));
 await user.click(screen.getByRole("button",{name:"Apply X / Y ellipse model"}));
 await waitFor(()=>{assert.equal(read().pending,false);const t=(read().settings.materialPresets as {id:string;kerfX:number;kerfY:number}[]).find(t=>t.id==="T1")!;assert.ok(Math.abs(t.kerfX-.115)<1e-12);assert.ok(Math.abs(t.kerfY-.135)<1e-12);},{timeout:10000});
 await user.click(screen.getByRole("button",{name:"Apply tested 4.15 mm opening"}));
@@ -379,4 +406,4 @@ await user.click(screen.getByRole("button",{name:"2D Sheets"}));assert.equal(doc
 cleanup();assert.equal(registered.size,0);
 const afterClose=new w.Event("beforeunload",{cancelable:true});window.dispatchEvent(afterClose);assert.equal(afterClose.defaultPrevented,false);
 dom.window.close();console.error=originalError;
-console.log("PASS: option hover/focus help and touch popovers without parameter changes or selected-state loss; compact stock/curve notes; removed external gauge reader; Jimmy default, draft/committed numeric controls, slider release, parameter history and shortcuts, storage on export/drawer close, splitter pointer/keyboard clamps, tab-close guard, workspace/import/export/WebMCP, and worker policy fallbacks.");
+console.log("PASS: settings rail pointer/keyboard sizing and source-upload cancellation; calibration heading autofocus, step help and two-piece single-sheet download; option hover/focus help and touch popovers without parameter changes or selected-state loss; compact stock/curve notes; removed external gauge reader; Jimmy default, draft/committed numeric controls, slider release, parameter history and shortcuts, storage on export/drawer close, splitter pointer/keyboard clamps, tab-close guard, workspace/import/export/WebMCP, and worker policy fallbacks.");

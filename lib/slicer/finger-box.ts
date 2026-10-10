@@ -83,6 +83,9 @@ export function fingerJointSpan(start:number,end:number,clearance:number){
   return {maleStart:start+inset,maleEnd:end-inset,slotStart:start+inset-clearance,slotEnd:end-inset+clearance};
 }
 export function fingerJointRelief(cut:Path2DLoop, radius:number, style:string):Path2DLoop[]{
+  // Masks represent removed solids. Give strips and circles the same winding
+  // so overlapping brace/finger cuts union instead of canceling one another.
+  cut={...cut,isHole:false,points:signedArea(cut.points)<0?[...cut.points].reverse():cut.points};
   if(style==="sharp"||radius<=EPS)return [cut];
   if(style==="dogbone")return [cut,...cut.points.map(p=>circle(p,radius))];
   const rounded:Point2D[]=[];
@@ -228,7 +231,8 @@ export function buildProfileBox(footprint:Path2DLoop[],H:number,s:SliceSettings,
     });
   }
   if(drafts.length>250){report("box-panel-limit","error","This shell needs more than 250 panels. Increase curve deviation or choose living hinges.");return [];}
-  if(f.bracing.enabled)makeBraces(footprint,walls,bottom,top,drafts,z0,z1,s,report);
+  if(f.bracing.enabled)makeBraces(footprint,walls,bottom,top,drafts,z0,z1,s,report,options);
+  options.onCapGuides?.(bottom.id,bottom.guides);options.onCapGuides?.(top.id,top.guides);
   // Keep the bottom first and top last so the animated assembly exposes its reinforcements.
   const ordered=[bottom,...drafts.filter(d=>d!==bottom&&d!==top),top];
   const result:LaserCutPiece[]=[];
@@ -242,7 +246,7 @@ export function buildProfileBox(footprint:Path2DLoop[],H:number,s:SliceSettings,
   return result;
 }
 
-function makeBraces(footprint:Path2DLoop[],walls:Wall[],bottom:Draft,top:Draft,drafts:Draft[],z0:number,z1:number,s:SliceSettings,report:Report){
+function makeBraces(footprint:Path2DLoop[],walls:Wall[],bottom:Draft,top:Draft,drafts:Draft[],z0:number,z1:number,s:SliceSettings,report:Report,options:ProfileBoxOptions){
   const b=boxSettings(s).bracing,maxT=Math.max(...walls.map(w=>w.t)),cavity=offsetPaths(footprint,-maxT),cb=bounds(cavity),braces:Draft[]=[];
   if(!cavity.length){report("brace-no-cavity","error","No interior cavity remains for the selected wall thickness.");return;}
   if(new Set(walls.map(w=>w.t)).size>1)report("brace-variable-wall","warning","The cavity uses the thickest wall as clearance. Braces anchor to the caps; some thinner walls may need adhesive at their contacts.");
@@ -257,7 +261,7 @@ function makeBraces(footprint:Path2DLoop[],walls:Wall[],bottom:Draft,top:Draft,d
   for(const axis of ["X","Y"] as const)for(const position of positions(axis==="X"?cb.minX:cb.minY,axis==="X"?cb.maxX:cb.maxY,axis)){
     const profile=axis==="X"?cavity:cavity.map(l=>({...l,points:l.points.map(p=>({x:p.y,y:p.x}))}));
     for(const [lo,hi] of scanIntervals(profile,position)){
-      const id=`BR-${axis}${String(++number).padStart(2,"0")}`,m=materialFor(s,id,b.braceThicknessId),height=z1-z0;
+      const id=`${options.prefix||""}BR-${axis}${String(++number).padStart(2,"0")}`,m=materialFor(s,id,b.braceThicknessId),height=z1-z0;
       if(hi-lo<Math.max(10,m.thickness*3))continue;
       const reliefSize=Math.min((hi-lo)/5,height/5,Math.max(maxT,b.cornerReliefSize));
       const raw:Path2DLoop[]=[{isHole:false,points:[{x:lo+reliefSize,y:z0},{x:hi-reliefSize,y:z0},{x:hi,y:z0+reliefSize},{x:hi,y:z1-reliefSize},{x:hi-reliefSize,y:z1},{x:lo+reliefSize,y:z1},{x:lo,y:z1-reliefSize},{x:lo,y:z0+reliefSize}]}];
@@ -269,9 +273,11 @@ function makeBraces(footprint:Path2DLoop[],walls:Wall[],bottom:Draft,top:Draft,d
         const center=lo+reliefSize+(j+.5)*(hi-lo-2*reliefSize)/b.tenonCountPerEdge;
         for(const [cap,z,up] of [[bottom,z0,false],[top,z1,true]] as const){
           const t=materialFor(s,cap.id).thickness,fit=b.slotFitTolerance;
+          const depth=(up?options.topTabDepth:options.bottomTabDepth)??t;
           const mask=axis==="X"?rectangle(position-(m.thickness+fit)/2,center-(width+fit)/2,m.thickness+fit,width+fit):rectangle(center-(width+fit)/2,position-(m.thickness+fit)/2,width+fit,m.thickness+fit);
           if(blind)cap.guides.push({points:mask.points,closed:true});
-          else {d.raw.push(rectangle(center-width/2,up?z-.002:z-t,width,t+.002));cap.cuts.push(mask);}
+          else {d.raw.push(rectangle(center-width/2,up?z-.002:z-depth,width,depth+.002));cap.cuts.push(mask);}
+          options.onBraceAnchor?.(cap.id,id,axis==="X"?{x:position,y:center}:{x:center,y:position});
           const candidate={x:(mask.points[0].x+mask.points[2].x)/2+(axis==="X"?m.thickness+6:0),y:(mask.points[0].y+mask.points[2].y)/2+(axis==="Y"?m.thickness+6:0)};
           cap.guides.push(...vectorLabel(id,cap.raw,{point:candidate,clearance:Math.min(6,pointClearance(candidate,cap.raw))}));
           cap.guides.push({points:[{x:mask.points[0].x-1,y:mask.points[0].y},{x:mask.points[0].x-1,y:mask.points[0].y+2}]});
@@ -288,6 +294,9 @@ function makeBraces(footprint:Path2DLoop[],walls:Wall[],bottom:Draft,top:Draft,d
           if(projection>.25&&(!nearest||distance<nearest.distance))nearest={wall,u:wall.cumulative[i-1]+f*(wall.cumulative[i]-wall.cumulative[i-1]),distance,projection};
         }
         if(!nearest||Math.abs(nearest.distance-nearest.wall.t/2)>.15)continue;
+        // A through-slot in a flex lattice severs its bridges. Curved strips
+        // instead meet the rib at an uncut butt contact; cap tabs locate it.
+        if(nearest.wall.draft.meta.category==="box_curved_wall")continue;
         const wall=nearest.wall,t=wall.t/nearest.projection,slot=m.thickness/nearest.projection+b.slotFitTolerance;
         for(let j=0;j<b.tenonCountPerEdge;j++){
           const z=z0+reliefSize+(j+.5)*(height-2*reliefSize)/b.tenonCountPerEdge,w=Math.min(b.tenonWidth,(height-2*reliefSize)/(b.tenonCountPerEdge*2)),mask=rectangle(nearest.u-slot/2,z-z0-w/2,slot,w+b.slotFitTolerance);

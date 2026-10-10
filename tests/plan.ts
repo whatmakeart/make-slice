@@ -59,7 +59,7 @@ const checkCalibrationArtboards=(kit:ReturnType<typeof exportCalibrationKit>)=>{
   }
 };
 checkCalibrationArtboards(raw);
-for(const mode of ["interlocking","stacked","finger_box"] as const){const s={...base,mode},kit=exportCalibrationKit("fit",stock,s,{step:.02});const meta=JSON.parse(strFromU8(unzipSync(kit.data)["calibration-metadata.json"]));assert.equal(meta.compensationApplied,true);assert.equal(meta.compensationOwner,"MakeSlice");assert.ok(kit.coupons.some(c=>c.id===`CHECK-${mode}`));assert.equal(kit.slots.length,11);near(kit.slots[6]-kit.slots[5],.02);checkCalibrationArtboards(kit);}
+for(const mode of ["interlocking","stacked","finger_box"] as const){const s={...base,mode},kit=exportCalibrationKit("fit",stock,s,{step:.02});const meta=JSON.parse(strFromU8(unzipSync(kit.data)["calibration-metadata.json"]));assert.equal(meta.compensationApplied,true);assert.equal(meta.compensationOwner,"MakeSlice");assert.ok(kit.testPieces.every(c=>c.checkJoint===mode));assert.equal(kit.sheets.length,1);assert.equal(kit.testPieces.length,2);assert.equal(kit.sheets[0].paths.filter(p=>p.layer==="CUT_OUTLINE").length,2);assert.equal(kit.slots.length,11);near(kit.slots[6]-kit.slots[5],.02);checkCalibrationArtboards(kit);}
 for(const clearance of [-.25,.25]){
   const joint=fingerJointSpan(8,18,clearance),s={...base,mode:"finger_box" as const,fingerBox:{...base.fingerBox!,fingerWidth:10,jointTolerance:clearance,cornerStyle:"sharp" as const}},sample=representativeJoint(stock,s),hole=sample.nominal!.find(p=>p.isHole)!;
   near(bounds([hole]).width,joint.slotEnd-joint.slotStart);near(bounds([hole]).height,stock.thickness+clearance);
@@ -117,7 +117,7 @@ const obj=strToU8("# original bytes\nv 0 0 0\nf 1 1 1\n"),meshProject={...projec
 const invalidFiles=unzipSync(saved.data),json=JSON.parse(strFromU8(invalidFiles["project.json"]));json.settings.skipTopLayersCount=null;assert.throws(()=>importProject(zipSync({...invalidFiles,"project.json":strToU8(JSON.stringify(json))})),/finite number/);
 assert.throws(()=>importProject(zipSync({"project.json":invalidFiles["project.json"],"../evil":strToU8("x")})),/unexpected/);validateProfile({id:"p",name:"Recorded stock",stock:calibrated});
 
-const out=".sites-runtime/validation/sprint-32";mkdirSync(out,{recursive:true});writeFileSync(`${out}/raw-calibration.zip`,raw.data);for(const [name,data] of Object.entries(rawFiles))if(name.endsWith("pdf")||name.endsWith("svg")||name.endsWith("dxf"))writeFileSync(`${out}/${name}`,data);
+const out=".sites-runtime/validation/sprint-33";mkdirSync(out,{recursive:true});writeFileSync(`${out}/raw-calibration.zip`,raw.data);for(const [name,data] of Object.entries(rawFiles))if(name.endsWith("pdf")||name.endsWith("svg")||name.endsWith("dxf"))writeFileSync(`${out}/${name}`,data);
 const kit=exportCalibrationKit("fit",stock,base,{step:.02}),fitFiles=unzipSync(kit.data);writeFileSync(`${out}/fit-instructions.pdf`,fitFiles["Instructions.pdf"]);writeFileSync(`${out}/fit-instructions.svg`,fitFiles["Instructions.svg"]);writeFileSync(`${out}/recovery-zero.dxf`,exportRecoveryDXF({...zero,revision:71}));writeFileSync(`${out}/project.makeslice`,saved.data);
 writeFileSync(`${out}/production.zip`,exportBundle({...scene,revision:72}));
 for(const [name,data] of Object.entries(unzipSync(exportBundle(scene))))if(name.endsWith(".dxf")||name.endsWith(".svg")&&!name.includes("Assembly")&&!name.startsWith("assembly-guide/"))writeFileSync(`${out}/production-${name.replaceAll("/","_")}`,data);

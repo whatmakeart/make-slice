@@ -1,73 +1,230 @@
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const {pathToFileURL}=require('node:url');
-const {chromium}=require('playwright');
-const {unzipSync,strFromU8}=require('fflate');
-(async()=>{
- const browser=await chromium.launch({executablePath:process.env.CHROMIUM_EXECUTABLE||chromium.executablePath(),headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'],env:process.env});
- try{
-  const page=await browser.newPage({viewport:{width:1440,height:1080},deviceScaleFactor:1}),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.addInitScript(()=>{
-   window.__tools={};document.modelContext={registerTool(t){window.__tools[t.name]=t;}};
-   window.__progress=[];const WorkerClass=window.Worker;window.Worker=class extends WorkerClass{constructor(...args){super(...args);this.addEventListener('message',e=>{if(e.data.progress)window.__progress.push(e.data);});}};
-   window.__frames=0;const frame=()=>{window.__frames++;requestAnimationFrame(frame);};requestAnimationFrame(frame);
-   window.__uniforms={};const locations=new WeakMap();const get=WebGL2RenderingContext.prototype.getUniformLocation,set=WebGL2RenderingContext.prototype.uniform1f;
-   WebGL2RenderingContext.prototype.getUniformLocation=function(program,name){const location=get.call(this,program,name);if(location)locations.set(location,name);return location;};
-   WebGL2RenderingContext.prototype.uniform1f=function(location,value){const name=locations.get(location);if(['roughness','transmission','thickness'].includes(name)){window.__uniforms[name]||=[];if(!window.__uniforms[name].includes(value))window.__uniforms[name].push(value);}return set.call(this,location,value);};
-   const capture=HTMLCanvasElement.prototype.captureStream;HTMLCanvasElement.prototype.captureStream=function(...args){const stream=capture.apply(this,args);window.__lastRecordingTracks=stream.getTracks();return stream;};
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { pathToFileURL } = require("node:url");
+const { chromium } = require("playwright");
+const { unzipSync, strFromU8 } = require("fflate");
+(async () => {
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_EXECUTABLE || chromium.executablePath(),
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader",
+    ],
+    env: process.env,
   });
-  await page.goto(pathToFileURL(path.resolve('dist/index.html')).href);
-  await page.waitForFunction(()=>window.__tools.read_slice_project.execute({}).model==='Jimmy.stl'&&!window.__tools.read_slice_project.execute({}).pending);
-  assert.equal(await page.getByRole('heading',{name:'MakeSlice',exact:true}).count(),1);
-  assert.equal(await page.getByRole('link',{name:'What Make Art',exact:true}).first().getAttribute('href'),'https://whatmakeart.com');
-  assert.equal(await page.getByRole('link',{name:'GitHub source'}).getAttribute('href'),'https://github.com/whatmakeart/laser-slicer');
-  await page.getByRole('combobox',{name:'Sample model'}).click();await page.getByRole('option',{name:'Calibration cube',exact:true}).click();
-  await page.waitForFunction(()=>window.__tools.read_slice_project.execute({}).model==='Calibration cube'&&!window.__tools.read_slice_project.execute({}).pending);
-  await page.getByText('Material & tooling',{exact:true}).click();
-  await page.getByRole('combobox',{name:'T1 material'}).click();await page.getByRole('option',{name:'Baltic Birch Plywood',exact:true}).click();
-  await page.waitForFunction(()=>!window.__tools.read_slice_project.execute({}).pending&&window.__uniforms.roughness?.includes(.85));
-  assert.equal(await page.getByRole('switch',{name:'Color code by thickness'}).getAttribute('aria-checked'),'false');
-  await page.locator('.assembly-canvas canvas').screenshot({path:'.sites-runtime/validation/sprint-23/plywood-viewport.png'});
-  await page.getByRole('combobox',{name:'T1 material'}).click();await page.getByRole('option',{name:'Cast Acrylic',exact:true}).click();
-  await page.waitForFunction(()=>!window.__tools.read_slice_project.execute({}).pending&&window.__uniforms.transmission?.includes(.88)&&window.__uniforms.roughness?.includes(.1));
-  await page.locator('.assembly-canvas canvas').screenshot({path:'.sites-runtime/validation/sprint-23/acrylic-viewport.png'});
-  await page.getByRole('combobox',{name:'T1 acrylic finish'}).click();await page.getByRole('option',{name:'Fluorescent Green',exact:true}).click();
-  await page.waitForFunction(()=>!window.__tools.read_slice_project.execute({}).pending&&window.__uniforms.transmission?.includes(.7));
-  await page.locator('.assembly-canvas canvas').screenshot({path:'.sites-runtime/validation/sprint-23/green-acrylic-viewport.png'});
-  await page.getByRole('button',{name:'Sequence',exact:true}).click();
-  assert.equal(await page.getByRole('switch',{name:'Show Reference Ghost Mesh in Video'}).getAttribute('aria-checked'),'true');
-  assert.equal(await page.getByRole('switch',{name:'Ghost mesh',exact:true}).getAttribute('aria-checked'),'false');
-  for(const [show,name] of [[false,'ghost-off'],[true,'ghost-on']]){
-   if((await page.getByRole('switch',{name:'Show Reference Ghost Mesh in Video'}).getAttribute('aria-checked'))!==String(show))await page.getByRole('switch',{name:'Show Reference Ghost Mesh in Video'}).click();
-   const download=page.waitForEvent('download',{timeout:60000});await page.getByRole('button',{name:'Download assembly video',exact:true}).click();const file=await download;
-   await file.saveAs(`.sites-runtime/validation/sprint-23/${name}.${file.suggestedFilename().split('.').pop()}`);
-   assert.ok(await page.evaluate(()=>window.__lastRecordingTracks.every(t=>t.readyState==='ended')));
-   assert.equal(await page.getByRole('switch',{name:'Ghost mesh',exact:true}).getAttribute('aria-checked'),'false');
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1080 }, deviceScaleFactor: 1 }),
+      errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.addInitScript(() => {
+      window.__tools = {};
+      document.modelContext = {
+        registerTool(t) {
+          window.__tools[t.name] = t;
+        },
+      };
+      window.__progress = [];
+      const WorkerClass = window.Worker;
+      window.Worker = class extends WorkerClass {
+        constructor(...args) {
+          super(...args);
+          this.addEventListener("message", (e) => {
+            if (e.data.progress) window.__progress.push(e.data);
+          });
+        }
+      };
+      window.__frames = 0;
+      const frame = () => {
+        window.__frames++;
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+      window.__uniforms = {};
+      const locations = new WeakMap();
+      const get = WebGL2RenderingContext.prototype.getUniformLocation,
+        set = WebGL2RenderingContext.prototype.uniform1f;
+      WebGL2RenderingContext.prototype.getUniformLocation = function (program, name) {
+        const location = get.call(this, program, name);
+        if (location) locations.set(location, name);
+        return location;
+      };
+      WebGL2RenderingContext.prototype.uniform1f = function (location, value) {
+        const name = locations.get(location);
+        if (["roughness", "transmission", "thickness"].includes(name)) {
+          window.__uniforms[name] ||= [];
+          if (!window.__uniforms[name].includes(value)) window.__uniforms[name].push(value);
+        }
+        return set.call(this, location, value);
+      };
+      const capture = HTMLCanvasElement.prototype.captureStream;
+      HTMLCanvasElement.prototype.captureStream = function (...args) {
+        const stream = capture.apply(this, args);
+        window.__lastRecordingTracks = stream.getTracks();
+        return stream;
+      };
+    });
+    await page.goto(pathToFileURL(path.resolve("dist/index.html")).href);
+    await page.waitForFunction(
+      () =>
+        window.__tools.read_slice_project.execute({}).model === "Jimmy.stl" &&
+        !window.__tools.read_slice_project.execute({}).pending,
+    );
+    assert.equal(await page.getByRole("heading", { name: "MakeSlice", exact: true }).count(), 1);
+    assert.equal(
+      await page.getByRole("link", { name: "What Make Art", exact: true }).first().getAttribute("href"),
+      "https://whatmakeart.com",
+    );
+    assert.equal(
+      await page.getByRole("link", { name: "GitHub source" }).getAttribute("href"),
+      "https://github.com/whatmakeart/make-slice",
+    );
+    await page.getByRole("combobox", { name: "Sample model" }).click();
+    await page.getByRole("option", { name: "Calibration cube", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        window.__tools.read_slice_project.execute({}).model === "Calibration cube" &&
+        !window.__tools.read_slice_project.execute({}).pending,
+    );
+    await page.getByText("Material & tooling", { exact: true }).click();
+    await page.getByRole("combobox", { name: "T1 material" }).click();
+    await page.getByRole("option", { name: "Baltic Birch Plywood", exact: true }).click();
+    await page.waitForFunction(
+      () => !window.__tools.read_slice_project.execute({}).pending && window.__uniforms.roughness?.includes(0.85),
+    );
+    assert.equal(
+      await page.getByRole("switch", { name: "Color code by thickness" }).getAttribute("aria-checked"),
+      "false",
+    );
+    await page
+      .locator(".assembly-canvas canvas")
+      .screenshot({ path: ".sites-runtime/validation/sprint-23/plywood-viewport.png" });
+    await page.getByRole("combobox", { name: "T1 material" }).click();
+    await page.getByRole("option", { name: "Cast Acrylic", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        !window.__tools.read_slice_project.execute({}).pending &&
+        window.__uniforms.transmission?.includes(0.88) &&
+        window.__uniforms.roughness?.includes(0.1),
+    );
+    await page
+      .locator(".assembly-canvas canvas")
+      .screenshot({ path: ".sites-runtime/validation/sprint-23/acrylic-viewport.png" });
+    await page.getByRole("combobox", { name: "T1 acrylic finish" }).click();
+    await page.getByRole("option", { name: "Fluorescent Green", exact: true }).click();
+    await page.waitForFunction(
+      () => !window.__tools.read_slice_project.execute({}).pending && window.__uniforms.transmission?.includes(0.7),
+    );
+    await page
+      .locator(".assembly-canvas canvas")
+      .screenshot({ path: ".sites-runtime/validation/sprint-23/green-acrylic-viewport.png" });
+    await page.getByRole("button", { name: "Sequence", exact: true }).click();
+    assert.equal(
+      await page.getByRole("switch", { name: "Show Reference Ghost Mesh in Video" }).getAttribute("aria-checked"),
+      "true",
+    );
+    assert.equal(
+      await page.getByRole("switch", { name: "Ghost mesh", exact: true }).getAttribute("aria-checked"),
+      "false",
+    );
+    for (const [show, name] of [
+      [false, "ghost-off"],
+      [true, "ghost-on"],
+    ]) {
+      if (
+        (await page
+          .getByRole("switch", { name: "Show Reference Ghost Mesh in Video" })
+          .getAttribute("aria-checked")) !== String(show)
+      )
+        await page.getByRole("switch", { name: "Show Reference Ghost Mesh in Video" }).click();
+      const download = page.waitForEvent("download", { timeout: 60000 });
+      await page.getByRole("button", { name: "Download assembly video", exact: true }).click();
+      const file = await download;
+      await file.saveAs(`.sites-runtime/validation/sprint-23/${name}.${file.suggestedFilename().split(".").pop()}`);
+      assert.ok(await page.evaluate(() => window.__lastRecordingTracks.every((t) => t.readyState === "ended")));
+      assert.equal(
+        await page.getByRole("switch", { name: "Ghost mesh", exact: true }).getAttribute("aria-checked"),
+        "false",
+      );
+    }
+    await page.getByRole("combobox", { name: "T1 material" }).click();
+    await page.getByRole("option", { name: "Cardboard", exact: true }).click();
+    await page.waitForFunction(() => !window.__tools.read_slice_project.execute({}).pending);
+    await page.getByRole("combobox", { name: "Sample model" }).click();
+    await page.getByRole("option", { name: "Jimmy", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        window.__tools.read_slice_project.execute({}).model === "Jimmy.stl" &&
+        !window.__tools.read_slice_project.execute({}).pending,
+    );
+    assert.equal(await page.locator(".error-banner").count(), 0);
+    assert.ok(
+      await page.evaluate(() =>
+        window.__progress.some((e) => e.progress.stage === "nesting" && e.progress.percent === 100),
+      ),
+    );
+    const job = page
+      .evaluate(() => window.__tools.configure_slices.execute({ mode: "finger_box", fingerBox: { chordalError: 10 } }))
+      .catch((error) => ({ failure: error.message }));
+    await page.waitForFunction(() => window.__tools.read_slice_project.execute({}).pending);
+    const frames = await page.evaluate(() => window.__frames);
+    await page.waitForTimeout(1500);
+    const advanced = await page.evaluate((before) => window.__frames - before, frames);
+    const completion = await job;
+    assert.ok(!completion.failure, completion.failure);
+    assert.ok(advanced >= 2, "Main-thread frames must continue during geometry / polygon packing: " + advanced);
+    assert.equal(await page.locator(".error-banner").count(), 0);
+    assert.ok(await page.evaluate(() => window.__tools.read_slice_project.execute({}).partCount > 100));
+    await page.getByRole("combobox", { name: "Sample model" }).click();
+    await page.getByRole("option", { name: "Donut box", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        window.__tools.read_slice_project.execute({}).model === "donut-box.stl" &&
+        !window.__tools.read_slice_project.execute({}).pending,
+    );
+    assert.equal(await page.locator(".error-banner").count(), 0);
+    assert.match(await page.locator(".construction-readout").innerText(), /inner tunnel walls/);
+    assert.equal(await page.getByLabel("Curve deviation").getAttribute("max"), "15");
+    await page.evaluate(() => {
+      document.querySelector(".main-workspace").scrollTop = 0;
+      document.querySelector(".parameters-scroll-area").scrollTop = 0;
+    });
+    await page.screenshot({ path: ".sites-runtime/validation/sprint-23/workspace-final.png", fullPage: true });
+    await page.getByRole("button", { name: "Export sheets", exact: true }).click();
+    await page.getByRole("textbox", { name: "Export project name" }).fill("Laser:Demo");
+    await page.getByRole("textbox", { name: "Export file prefix" }).fill("Batch/09");
+    await page.getByRole("textbox", { name: "Export file suffix" }).fill("rev*2");
+    await page.getByRole("switch", { name: "Include sheet suffix" }).click();
+    await page.getByRole("combobox", { name: "Assembly guide page size" }).click();
+    await page.getByRole("option", { name: "A4 · 210 × 297 mm", exact: true }).click();
+    assert.match(await page.locator(".filename-preview").innerText(), /Batch_09_Laser_Demo_01_rev_2\.dxf/);
+    await page.locator(".export-dialog").screenshot({ path: ".sites-runtime/validation/sprint-23/export-dialog.png" });
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download all sheets · ZIP" }).click();
+    const file = await download;
+    assert.equal(file.suggestedFilename(), "Batch_09_Laser_Demo_laser-sheets_rev_2.zip");
+    await file.saveAs(".sites-runtime/validation/sprint-23/named-export.zip");
+    const files = unzipSync(fs.readFileSync(".sites-runtime/validation/sprint-23/named-export.zip"));
+    assert.ok(files["Batch_09_Laser_Demo_01_rev_2.dxf"]);
+    assert.ok(files["Batch_09_Laser_Demo_Assembly_Diagram_rev_2.svg"]);
+    const pdf = files["Batch_09_Laser_Demo_Assembly_Guide_rev_2.pdf"];
+    assert.ok(pdf);
+    fs.writeFileSync(".sites-runtime/validation/sprint-23/browser-guide.pdf", pdf);
+    const metadata = JSON.parse(strFromU8(files["Batch_09_Laser_Demo_project-metadata_rev_2.json"]));
+    assert.equal(metadata.guidePageSize, "a4");
+    assert.ok(Object.keys(files).some((n) => n.startsWith("assembly-guide/") && n.endsWith(".svg")));
+    assert.equal(errors.length, 0, errors.join("\n"));
+    console.log(
+      "PASS: native physical plywood/acrylic uniforms and finishes, ghost on/off video downloads, tracks cleaned up, both embedded presets, responsive worker geometry, 15 mm curve control, branding, sanitized project naming, and printable A4 bundle.",
+    );
+  } finally {
+    await browser.close();
   }
-  await page.getByRole('combobox',{name:'T1 material'}).click();await page.getByRole('option',{name:'Cardboard',exact:true}).click();await page.waitForFunction(()=>!window.__tools.read_slice_project.execute({}).pending);
-  await page.getByRole('combobox',{name:'Sample model'}).click();await page.getByRole('option',{name:'Jimmy',exact:true}).click();
-  await page.waitForFunction(()=>window.__tools.read_slice_project.execute({}).model==='Jimmy.stl'&&!window.__tools.read_slice_project.execute({}).pending);
-  assert.equal(await page.locator('.error-banner').count(),0);assert.ok(await page.evaluate(()=>window.__progress.some(e=>e.progress.stage==='nesting'&&e.progress.percent===100)));
-  const job=page.evaluate(()=>window.__tools.configure_slices.execute({mode:'finger_box',fingerBox:{chordalError:10}})).catch(error=>({failure:error.message}));
-  await page.waitForFunction(()=>window.__tools.read_slice_project.execute({}).pending);
-  const frames=await page.evaluate(()=>window.__frames);await page.waitForTimeout(1500);const advanced=await page.evaluate(before=>window.__frames-before,frames);const completion=await job;assert.ok(!completion.failure,completion.failure);assert.ok(advanced>=2,'Main-thread frames must continue during geometry / polygon packing: '+advanced);
-assert.equal(await page.locator('.error-banner').count(),0);assert.ok(await page.evaluate(()=>window.__tools.read_slice_project.execute({}).partCount>100));
-  await page.getByRole('combobox',{name:'Sample model'}).click();await page.getByRole('option',{name:'Donut box',exact:true}).click();
-  await page.waitForFunction(()=>window.__tools.read_slice_project.execute({}).model==='donut-box.stl'&&!window.__tools.read_slice_project.execute({}).pending);
-  assert.equal(await page.locator('.error-banner').count(),0);assert.match(await page.locator('.construction-readout').innerText(),/inner tunnel walls/);
-  assert.equal(await page.getByLabel('Curve deviation').getAttribute('max'),'15');
-  await page.evaluate(()=>{document.querySelector('.main-workspace').scrollTop=0;document.querySelector('.parameters-scroll-area').scrollTop=0;});
-  await page.screenshot({path:'.sites-runtime/validation/sprint-23/workspace-final.png',fullPage:true});
-  await page.getByRole('button',{name:'Export sheets',exact:true}).click();
-  await page.getByRole('textbox',{name:'Export project name'}).fill('Laser:Demo');await page.getByRole('textbox',{name:'Export file prefix'}).fill('Batch/09');await page.getByRole('textbox',{name:'Export file suffix'}).fill('rev*2');
-  await page.getByRole('switch',{name:'Include sheet suffix'}).click();await page.getByRole('combobox',{name:'Assembly guide page size'}).click();await page.getByRole('option',{name:'A4 · 210 × 297 mm',exact:true}).click();
-  assert.match(await page.locator('.filename-preview').innerText(),/Batch_09_Laser_Demo_01_rev_2\.dxf/);
-  await page.locator('.export-dialog').screenshot({path:'.sites-runtime/validation/sprint-23/export-dialog.png'});
-  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download all sheets · ZIP'}).click();const file=await download;
-  assert.equal(file.suggestedFilename(),'Batch_09_Laser_Demo_laser-sheets_rev_2.zip');await file.saveAs('.sites-runtime/validation/sprint-23/named-export.zip');
-  const files=unzipSync(fs.readFileSync('.sites-runtime/validation/sprint-23/named-export.zip'));assert.ok(files['Batch_09_Laser_Demo_01_rev_2.dxf']);assert.ok(files['Batch_09_Laser_Demo_Assembly_Diagram_rev_2.svg']);const pdf=files['Batch_09_Laser_Demo_Assembly_Guide_rev_2.pdf'];assert.ok(pdf);fs.writeFileSync('.sites-runtime/validation/sprint-23/browser-guide.pdf',pdf);
-  const metadata=JSON.parse(strFromU8(files['Batch_09_Laser_Demo_project-metadata_rev_2.json']));assert.equal(metadata.guidePageSize,'a4');assert.ok(Object.keys(files).some(n=>n.startsWith('assembly-guide/')&&n.endsWith('.svg')));
-  assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: native physical plywood/acrylic uniforms and finishes, ghost on/off video downloads, tracks cleaned up, both embedded presets, responsive worker geometry, 15 mm curve control, branding, sanitized project naming, and printable A4 bundle.');
- }finally{await browser.close();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+})().catch((e) => {
+  console.error(e);
+  process.exitCode = 1;
+});

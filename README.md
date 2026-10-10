@@ -12,13 +12,9 @@
   </a>
   <br/><br/>
 
-  <!-- Status & Package Badges -->
+</div>
 
-# make-slice
-
-[![License](https://img.shields.io/github/license/whatmakeart/make-slice?style=flat-square)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Vite](https://img.shields.io/badge/Vite-8-646CFF.svg?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/) [![Node](https://img.shields.io/badge/Node-%3E%3D22.15-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-
----
+## [![MakeSlice Laser Cutter Slicer](./assets/make-slicke-laser-cutter-slicer-whatmakeart.jpg)](<[text](https://whatmakeart.com/make-slice/)>)
 
 ## Quick Start Guide
 
@@ -156,3 +152,7 @@ Clicking **Export cut bundle** downloads a ZIP archive containing:
 - **Enter:** Commit numeric input field.
 - **Esc:** Close settings drawer (mobile/tablet) or dialog windows.
 - **Space / Arrow Keys:** Step through 3D assembly playback sequence.
+
+  <!-- Status & Package Badges -->
+
+[![License](https://img.shields.io/github/license/whatmakeart/make-slice?style=flat-square)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Vite](https://img.shields.io/badge/Vite-8-646CFF.svg?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/) [![Node](https://img.shields.io/badge/Node-%3E%3D22.15-brightgreen.svg?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)

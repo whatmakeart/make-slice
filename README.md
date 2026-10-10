@@ -1,7 +1,5 @@
 # MakeSlice - 3D Model to Laser-Cut Assembly Slicer
 
-**MakeSlice** is a free, browser-based digital fabrication tool that turns 3D models (STL and OBJ) into physical slot-together, stacked, or folded sheet assemblies for laser cutters and CNC routers. All processing runs 100% locally in your browser-no file uploads, servers, or installations required.
-
 <div align="center">
   <h1>make-slice</h1>
   <p>Slice, prepare, and process 3D models and geometry.</p>
@@ -14,7 +12,9 @@
 
 </div>
 
-## [![MakeSlice Laser Cutter Slicer](./assets/make-slicke-laser-cutter-slicer-whatmakeart.jpg)](<[text](https://whatmakeart.com/make-slice/)>)
+[![MakeSlice Laser Cutter Slicer](./assets/make-slicke-laser-cutter-slicer-whatmakeart.jpg)](https://whatmakeart.com/make-slice/)
+
+**MakeSlice** is a free, browser-based digital fabrication tool that turns 3D models (STL and OBJ) into physical slot-together, stacked, or folded sheet assemblies for laser cutters and CNC routers. All processing runs 100% locally in your browser-no file uploads, servers, or installations required.
 
 ## Quick Start Guide
 
